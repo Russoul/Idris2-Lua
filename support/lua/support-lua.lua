@@ -1,8 +1,16 @@
-package.path = package.path .. ";./bigint/?.lua"
-package.path = package.path .. ";./luautf8/?.lua"
+--package.path = package.path .. ";./bigint/?.lua"
+--package.path = package.path .. ";./luautf8/?.lua"
 local utf8 = require("lua-utf8")
 local bigint = require("bigint")
 
+
+function Prelude_prim__putStr(str, world)
+  io.write(str)
+end	
+
+function Prelude_prim__getStr(world)
+  return io.read()
+end
 
 function idris__getArgsImpl(i)
   if i <= #arg then

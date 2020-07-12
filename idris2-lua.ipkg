@@ -7,6 +7,6 @@ modules =
   LuaAst,
   LuaGen
 
-sourcedir = "."
+sourcedir = "src"
 main = LuaGen
 executable = idris2-lua

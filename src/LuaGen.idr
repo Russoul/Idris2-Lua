@@ -406,17 +406,9 @@ mutual
              -> Core LuaExpr
   processForeign name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
     do
-       addDefToPreamble 
-        ("$$" ++ show name)
-         (stringify Z $ LFnDecl Global name [UN "x"] (LApp (LVar (UN "print")) [LVar (UN "x")]))
-          False
-       pure LDoNothing   
+      pure LDoNothing   
   processForeign name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
     do
-      addDefToPreamble ("$$" ++ show name) 
-       (stringify Z $ LFnDecl Global name [] 
-        (LReturn $ LApp (LIndex (LVar (UN "io")) (LString "read") )
-         [])) False
       pure LDoNothing   
   processForeign name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
     pure LDoNothing -- in support file
