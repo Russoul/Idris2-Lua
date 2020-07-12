@@ -3,4 +3,4 @@
 	url = https://github.com/starwing/luautf8.git
 [submodule "bigint"]
 	path = bigint
-	url = https://github.com/empyreuma/bigint.lua.git
+	url = https://github.com/Russoul/bigint.lua.git
