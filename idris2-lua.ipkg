@@ -1,0 +1,12 @@
+package idris2lua
+
+depends = idris2, contrib, network
+
+modules =
+  LuaCommon,
+  LuaAst,
+  LuaGen
+
+sourcedir = "."
+main = LuaGen
+executable = idris2-lua
