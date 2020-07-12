@@ -17,6 +17,11 @@ namespace Data.List
         (l :: ls, r :: rs)
   unzip [] = ([], [])      
 
+namespace Data.Maybe
+  export
+  orElse : (maybe : Maybe a) -> Lazy a -> a
+  orElse Nothing x = x
+  orElse (Just x) _ = x
 
 public export
 validateIdentifier : String -> String

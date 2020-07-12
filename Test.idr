@@ -61,9 +61,25 @@ Cast Nat String where
 testInteger : Integer -> Integer -> Integer
 testInteger x y = x * x * x * x - 1
 
+%hide Prelude.print
+
+data Package : Type -> Type where [external]
+
+%foreign "lua:function (ty, x) return inspect(x) end|inspect"
+inspect : {0 a : Type} -> (x : a) -> String
+--inspect : (HasIO io) => a -> String
+
+%foreign "lua:print"
+print_ : String -> ()
+
+print : (HasIO io) => String -> io ()
+print x = pure $ print_ x
+
+
 main : IO ()
 main = do 
   v <- newIORef ""
+  print "enter something:"
   writeIORef v !(getLine)
   putStrLn $ "you said " ++ !(readIORef v)
   putStrLn $ if 1 > 2 then "not ok" else "ok"
@@ -81,7 +97,9 @@ main = do
   putStrLn $ show $ testInteger 2 5
   putStrLn $ "2 ^ 6 == " ++ show (intPow 2 6)
   let  tr = fillIn 4 [] (\d, i => (cast d) ++ " " ++ (cast i))
-  putStrLn $ printLeft tr 
+  putStrLn $ printLeft tr
+
+  putStrLn $ "the guts of BTree look like this: " ++ inspect tr
 
   putStrLn $ show from
   putStrLn $ show $ (the Integer (2 - 2)) == 0

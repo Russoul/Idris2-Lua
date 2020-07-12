@@ -13,6 +13,7 @@ import System.File
 import System
 import Data.Strings
 import Data.String.Extra as StrExtra
+import Data.SortedMap
 import Utils.Path
 import Utils.Hex
 import public LuaCommon
@@ -96,7 +97,7 @@ mutual
                   ++ stringify (S n) body ++ "\n" ++ indent n ++ "end"
   stringify n (LReturn x) = indent n ++ "return \n" ++ stringify (S n) x ++ "\n" ++ indent n ++ ""
   stringify n (LAssign (Just vis) x y) = 
-    indent n ++ stringifyVisibility vis ++ "\n" ++ stringify (S n) x 
+    indent n ++ stringifyVisibility vis ++ "\n" ++ stringify n x 
     ++ " =\n" ++ stringify (n + 2) y
   stringify n (LAssign Nothing x y) = 
     stringify n x ++ " =\n" ++ stringify (S n) y 
@@ -231,10 +232,15 @@ replaceNames names LDoNothing = LDoNothing
 
 
 data NameGen : Type where
+data Preamble : Type where
 
 record NameGenSt where
   constructor MkNameGenSt
   nextName : Int
+
+record PreambleSt where
+  constructor MkPreambleSt
+  preamble : SortedMap String String
 
 genName : {auto c : Ref NameGen NameGenSt} -> Core Name
 genName = 
@@ -243,6 +249,36 @@ genName =
     let i = nextName s
     put NameGen (record{nextName $= (+1)} s)
     pure $ MN "idris__" i
+
+getPreamble :
+           {auto p : Ref Preamble PreambleSt}
+        -> Core $ SortedMap String String
+getPreamble = do
+  x <- get Preamble
+  pure x.preamble
+
+
+addDefToPreamble : 
+           {auto c : Ref NameGen NameGenSt}
+        -> {auto preamble : Ref Preamble PreambleSt}
+        -> String
+        -> String
+        -> Bool
+        -> Core ()
+addDefToPreamble name def okIfDefined = do
+  do
+    s <- getPreamble
+    let dname = name
+    case lookup dname s of
+      Nothing =>
+        do
+          put Preamble (MkPreambleSt $ insert dname def s)
+          pure ()
+      Just _ => 
+          if not okIfDefined then
+               throw $ InternalError $ "Attempt to redefine preamble definition '" ++ name ++ "'"
+             else
+               pure ()
 
 
 constantTy : Constant -> Maybe Constant
@@ -339,24 +375,72 @@ mutual
       pure $ LApp (LLambda [] $ LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])  ) v) []
   processPrimExt prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
 
+   
 
-  processForeign : {auto c : Ref NameGen NameGenSt}
+
+  readCCPart : String -> (String, String)
+  readCCPart x =
+    let (cc, def) = break (== ':') x
+    in (cc, drop 1 def)
+  
+
+  searchForeign : List String -> Maybe (String, Maybe String) --def, require
+  searchForeign [] = Nothing
+  searchForeign (x::xs) =
+    let (cc, def) = readCCPart x
+    in if cc == "lua" 
+        then 
+             let (def, req) = break (== '|') def in
+                 Just (def, if req == "" then Nothing else Just $ drop 1 req)
+        else searchForeign xs
+
+
+  processForeign : 
+             {auto refs : Ref Ctxt Defs} 
+             -> {auto c : Ref NameGen NameGenSt}
+             -> {auto preamble : Ref Preamble PreambleSt}
              -> Name
              -> List String
              -> List CFType
              -> CFType
              -> Core LuaExpr
   processForeign name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
-    pure $ LFnDecl Global name [UN "x"] (LApp (LVar (UN "print")) [LVar (UN "x")])
+    do
+       addDefToPreamble 
+        ("$$" ++ show name)
+         (stringify Z $ LFnDecl Global name [UN "x"] (LApp (LVar (UN "print")) [LVar (UN "x")]))
+          False
+       pure LDoNothing   
   processForeign name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
-    pure $ LFnDecl Global name [] 
-      (LReturn $ LApp (LIndex (LVar (UN "io")) (LString "read") )
-      [])
+    do
+      addDefToPreamble ("$$" ++ show name) 
+       (stringify Z $ LFnDecl Global name [] 
+        (LReturn $ LApp (LIndex (LVar (UN "io")) (LString "read") )
+         [])) False
+      pure LDoNothing   
   processForeign name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
-    pure $ LDoNothing -- in support file
-  processForeign name _ _ _ =
-      throw $ InternalError $ "%foreign " ++ show name ++ " not implemented for Lua backend"
+    pure LDoNothing -- in support file
+  processForeign name hints argtys retty = do
+      let ((def, maybeReq), replace) 
+          = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName name, Nothing), False)
+      log 2 $ "using %foreign " ++ def
+      case maybeReq of
+           (Just pack) => do 
+                         log 2 $ "requiring " ++ pack
+                         addDefToPreamble 
+                          ("$" ++ pack) 
+                           ((stringifyName $ UN pack) ++ " = require('" ++ pack ++ "')")
+                            True -- its ok to require the same package multiple times, ignore all but first
 
+                                                             -- '$' makes sure all require statements
+                                                             -- are above assingnments using them
+           Nothing => pure ()
+      
+      if replace then do
+            addDefToPreamble (show name) ((stringifyName name) ++ " = " ++ def) False
+            pure LDoNothing 
+         else
+            pure LDoNothing
 
   processPrimCmp : {auto c : Ref NameGen NameGenSt} 
             -> PrimFn arity 
@@ -478,7 +562,10 @@ mutual
   processTag _ (Just i) = show i
 
 
-  processDef : {auto c: Ref NameGen NameGenSt} 
+  processDef : 
+        {auto c: Ref NameGen NameGenSt} 
+        -> {auto refs : Ref Ctxt Defs}
+        -> {auto preamble : Ref Preamble PreambleSt}
         -> (Name, FC, NamedDef) 
         -> Core LuaExpr
   processDef (n, _, MkNmFun args expr) =
@@ -503,6 +590,7 @@ translate defs term = do
   let ctm = forget cdata.mainExpr
   
   s <- newRef NameGen (MkNameGenSt 0)
+  pr <- newRef Preamble (MkPreambleSt empty)
   log 5 $ "\n\n ---------- USED DEFS ---------\n" ++ sepBy (show <$> defsUsedByNamedCExp ctm ndefs) "\n\n"
   log 5 $ "\n\n ---------- MAIN -----------\n\n" ++ show ctm
   cdefs <- traverse processDef (defsUsedByNamedCExp ctm ndefs).reverse
@@ -511,12 +599,15 @@ translate defs term = do
   main <- processExpr ctm
 
   supportFile <- readDataFile $ "lua" </> "support-lua.lua"
+  preamble <- getPreamble
 
 
   pure $        " --------- SUPPORT DEFS ---------\n" 
              ++ supportFile ++ "\n" 
              ++ stringify Z (concat builtinSupportDefs) 
-             ++ "\n---------- CTX DEFS ----------\n" 
+             ++ "\n---------- PREAMBLE DEFS ----------\n"
+             ++ sepBy preamble.values "\n" ++ "\n\n"
+             ++ "\n---------- CTX DEFS ----------\n"
              ++ stringify Z con_cdefs
              ++ "\n--------- RETURN ---------\n" ++ stringify Z main
 
