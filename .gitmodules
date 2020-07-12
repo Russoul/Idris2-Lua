@@ -1,0 +1,6 @@
+[submodule "luautf8"]
+	path = luautf8
+	url = https://github.com/starwing/luautf8.git
+[submodule "bigint"]
+	path = bigint
+	url = https://github.com/empyreuma/bigint.lua.git
