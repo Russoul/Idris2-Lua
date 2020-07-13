@@ -39,7 +39,7 @@ ${TARGET}:
 clean: 
 	$(RM) -r build
 
-install: install-idris2-lua install-support install-lua-deps
+install: install-idris2-lua install-support 
 
 install-idris2-lua:
 	mkdir -p ${PREFIX}/bin/
@@ -54,8 +54,5 @@ install-support:
 	mkdir -p ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 	install support/lua/* ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 
-install-lua-deps:
-	cd bigint && luarocks make
-	cd luautf8 && luarocks make
 
 

@@ -9,6 +9,8 @@ import Data.List
 import System
 data MyData = MyCons0 Nat | MyCons1
 
+%language PostfixProjections
+
 Show MyData where
   show (MyCons0 x) = "blah" ++ show x
   show MyCons1 = "babah"
@@ -63,11 +65,22 @@ testInteger x y = x * x * x * x - 1
 
 %hide Prelude.print
 
-data Package : Type -> Type where [external]
+data Lua : Type where [external]
 
 %foreign "lua:function (ty, x) return inspect(x) end|inspect"
 inspect : {0 a : Type} -> (x : a) -> String
 --inspect : (HasIO io) => a -> String
+
+%foreign "lua:function(x, str) return x[str] end|inspect"
+dot : Lua -> String -> Lua
+
+%foreign "lua:function (x) return _G.require (x) end"
+require : String -> Lua
+
+%foreign "lua:function(a, b, f, x) return f(x) end"
+call : {0 a : Type} -> {0 b : Type} -> Lua -> a -> b
+
+
 
 %foreign "lua:print"
 print_ : String -> ()
@@ -77,7 +90,11 @@ print x = pure $ print_ x
 
 
 main : IO ()
-main = do 
+main = do
+  let ins = require"inspect"
+  let big = require"bigint"
+  putStrLn$ (ins .dot "inspect")  .call[1, 2, the Int 3]{a = List _}{b = String}
+
   v <- newIORef ""
   print "enter something:"
   writeIORef v !(getLine)
@@ -98,12 +115,12 @@ main = do
   putStrLn $ "2 ^ 6 == " ++ show (intPow 2 6)
   let  tr = fillIn 4 [] (\d, i => (cast d) ++ " " ++ (cast i))
   putStrLn $ printLeft tr
-
+  
   putStrLn $ "the guts of BTree look like this: " ++ inspect tr
 
   putStrLn $ show from
   putStrLn $ show $ (the Integer (2 - 2)) == 0
   putStrLn $ show $ factorial 100 1
-  
+  schemeCall Unit "print" ["blah", inspect $ the (List _) [the Int 1], inspect $ the Nat 3, the Int 1]
 
 

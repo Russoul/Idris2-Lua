@@ -3,6 +3,7 @@ Lua backend for Idris2
 
 ## Installation
 - `Idris2` should be in your `PATH`
+- `luarocks install luautf8 && luarocks install bigint`
 - `make all && make install`
 ### Tests - TODO
 

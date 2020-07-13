@@ -73,17 +73,17 @@ mutual
                         ++ stringify (S n) body ++ "\n"
                         ++ indent n ++ "end"
   stringify n (LApp (LVar name) xs) =
-     stringify n (LVar name) ++ "\n"
-                  ++ indent n ++ "(\n" ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
+     stringify n (LVar name) ++ "(\n"
+                  ++ indent n ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
 
   stringify n (LApp f xs) = 
-    indent n ++ "(\n" ++ stringify (S n) f ++ "\n" 
-                  ++ indent n ++ ")(\n" ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
+    indent n ++ "(\n" ++ stringify (S n) f ++ ")(\n" 
+                      ++ indent n ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
   stringify n LNil = indent n ++ "nil"
   stringify n LFalse = indent n ++ "false"
   stringify n LTrue = indent n ++ "true"
   stringify n (LNumber num) = indent n ++ num
-  stringify n (LBigInt num) = indent n ++ "bigint.new(" ++ "\"" ++ num ++ "\"" ++ ")"
+  stringify n (LBigInt num) = indent n ++ "bigint:new(" ++ "\"" ++ num ++ "\"" ++ ")"
   stringify n (LString s) = indent n ++ "\"" ++ escapeString s ++ "\""
   stringify n (LTable kvs) = 
         indent n ++ "{\n" 
@@ -115,7 +115,7 @@ mutual
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
   stringify n (LPrimFn (Div IntType) [x, y]) = stringifyBinOp n "//" x y
-  stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyFnApp n "idris__bigint_div" [x, y]
+  stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyFnApp n "/" [x, y]
   stringify n (LPrimFn (Div DoubleType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Mod ty) [x ,y]) = stringifyBinOp n "%" x y
   stringify n (LPrimFn (Neg ty) [x]) = indent n ++ "- (" ++ stringify Z x ++ ")"
@@ -124,11 +124,11 @@ mutual
   stringify n (LPrimFn (BAnd ty) [x, y]) = stringifyBinOp n "&" x y
   stringify n (LPrimFn (BOr ty) [x, y]) = stringifyBinOp n "|" x y
   stringify n (LPrimFn (BXOr ty) [x, y]) = stringifyBinOp n "~" x y
-  stringify n (LPrimFn (LT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<")] 
-  stringify n (LPrimFn (LTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<=")]    
-  stringify n (LPrimFn (EQ IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "==")]    
-  stringify n (LPrimFn (GTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">=")]    
-  stringify n (LPrimFn (GT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">")]    
+  -- stringify n (LPrimFn (LT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<")] 
+  -- stringify n (LPrimFn (LTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<=")]    
+  -- stringify n (LPrimFn (EQ IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "==")]    
+  -- stringify n (LPrimFn (GTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">=")]    
+  -- stringify n (LPrimFn (GT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">")]    
   stringify n (LPrimFn (LT ty) [x, y]) = stringifyBinOp (S n) "<" x y     
   stringify n (LPrimFn (LTE ty) [x, y]) = stringifyBinOp (S n) "<=" x y  
   stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y        
@@ -167,26 +167,26 @@ mutual
 
   stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "tonumber" [x] 
   stringify n (LPrimFn (Cast StringType DoubleType) [x]) = stringifyFnApp n "tonumber" [x]
-  stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint.new" [x]
+  stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
   stringify n (LPrimFn (Cast IntType CharType) [x]) = indent n ++ "utf8.char(\n" ++ stringify (S n) x ++ ")"
   stringify n (LPrimFn (Cast IntType DoubleType) [x]) = stringify n x
-  stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint.new" [x]
+  stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = indent n ++ "bigint.new(utf8.byte(\n" ++ stringify (S n) x ++ "))"
+  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = indent n ++ "bigint:new(utf8.byte(\n" ++ stringify (S n) x ++ "))"
   stringify n (LPrimFn (Cast CharType IntType) [x]) = indent n ++ "utf8.byte(\n" ++ stringify (S n) x ++ ")"
 
 
-  stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.unserialize" [x]
-  stringify n (LPrimFn (Cast IntegerType IntType) [x]) = stringifyFnApp n "bigint.unserialize" [x]
-  stringify n (LPrimFn (Cast IntegerType StringType) [x]) = indent n ++ "bigint.unserialize(\n" ++ stringify (S n) x ++ ", \"s\")"
+  stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
+  stringify n (LPrimFn (Cast IntegerType IntType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
+  stringify n (LPrimFn (Cast IntegerType StringType) [x]) = stringifyFnApp n "bigint.tostring" [x]
 
 
   stringify n (LPrimFn (Cast DoubleType IntType) [x]) = stringifyFnApp n "math.floor" [x]
   stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) = 
-    stringifyFnApp n "math.floor" [ LApp (LIndex (LVar (UN "bigint")) (LVar (UN "unserialize"))) [x]]
+    indent n ++ "bigint:new(math.floor(\n" ++ stringify (S n) x ++ "))" 
   
 
   stringify n (LPrimFn (Cast ty StringType) [x]) = stringifyFnApp n "tostring" [x]
@@ -373,7 +373,11 @@ mutual
       i <- processExpr i
       v <- processExpr v
       pure $ LApp (LLambda [] $ LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])  ) v) []
+  processPrimExt name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
+  processPrimExt name@(NS ["Info", "System"] (UN "prim__os")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
+  processPrimExt name@(NS ["Uninhabited", "Prelude"] (UN "void")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
   processPrimExt prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
+
 
    
 
