@@ -5,7 +5,7 @@ Lua backend for Idris 2
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
 - Lua 5.3 is a minimum requirement
 - Depends on [lua-utf8](https://github.com/starwing/luautf8.git) and [lua-bigint](https://github.com/JorjBauer/lua-bigint.git)
-  lua packages
+  packages
   
   Both can be installed via *luarocks*:
   
