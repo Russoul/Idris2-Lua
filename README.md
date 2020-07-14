@@ -1,4 +1,4 @@
-## idris2-lua
+# idris2-lua
 Lua backend for Idris 2
 
 ## Requirements
