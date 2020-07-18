@@ -137,9 +137,11 @@ mutual
   stringify n (LPrimFn StrLength [x]) = indent n ++ "utf8.len(\n" ++ stringify (S n) x ++ ")"
   stringify n (LPrimFn StrHead [x]) = indent n ++ "utf8.sub(\n" ++ stringify (S n) x ++ ", 1, 1)"
   stringify n (LPrimFn StrTail [x]) = indent n ++ "utf8.sub(\n" ++ stringify (S n) x ++ ", 2)"
-  stringify n (LPrimFn StrIndex [str, i]) = indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
-                  ++ ",\n" ++ stringify (S n) i ++ ",\n" 
-                  ++ stringify (S n) i ++ ")" 
+  stringify n (LPrimFn StrIndex [str, i]) = 
+      let strI = stringify (S n) i in
+         indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
+                        ++ ",\n" ++ strI ++ ",\n" 
+                        ++ strI ++ ")" 
   stringify n (LPrimFn StrCons [x, xs]) =
     indent n ++ "(\n" ++ stringify (S n) x ++ ") .. (\n" 
                   ++ stringify (S n) xs ++ ")"
@@ -148,9 +150,10 @@ mutual
                   ++ stringify (S n) xs ++ ")"
   stringify n (LPrimFn StrReverse [x]) = indent n ++ "(\n" ++ stringify (S n) x ++ "):reverse()"
   stringify n (LPrimFn StrSubstr [offset, len, str]) = 
-    indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
-    ++ ",\n" ++ stringify (S n) offset 
-    ++ ",\n" ++ stringify (S n) offset ++ " +\n" ++ stringify (S n) len ++ " - 1)"
+     let strOff = stringify (S n) offset in
+         indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
+         ++ ",\n" ++ strOff 
+         ++ ",\n" ++ strOff ++ " +\n" ++ stringify (S n) len ++ " - 1)"
   stringify n (LPrimFn DoubleExp args) = stringifyFnApp n "math.pow" args
   stringify n (LPrimFn DoubleLog args) = stringifyFnApp n "math.log" args
   stringify n (LPrimFn DoubleSin args) = stringifyFnApp n "math.sin" args
