@@ -115,7 +115,7 @@ mutual
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
   stringify n (LPrimFn (Div IntType) [x, y]) = stringifyBinOp n "//" x y
-  stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyFnApp n "/" [x, y]
+  stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Div DoubleType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Mod ty) [x ,y]) = stringifyBinOp n "%" x y
   stringify n (LPrimFn (Neg ty) [x]) = indent n ++ "- (" ++ stringify Z x ++ ")"
