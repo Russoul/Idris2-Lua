@@ -6,6 +6,7 @@ import Core.Core
 import Data.Strings
 import Data.String.Extra as StrExtra
 import Data.Vect
+import Data.List
 import Utils.Hex
 
 
@@ -24,8 +25,15 @@ namespace Data.Maybe
   orElse (Just x) _ = x
 
 public export
+luaKeywords : List String
+luaKeywords = ["and", "break", "do", "else", "elseif", "end",
+               "false", "for", "function", "goto", "if", "in",
+               "local", "nil", "not", "or", "repeat", "return",
+               "then", "true", "until", "while"]
+
+public export
 validateIdentifier : String -> String
-validateIdentifier str = concat $ validate <$> unpack str
+validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
   where
     validate : Char -> String
     validate ':' = "col"
@@ -60,6 +68,12 @@ validateIdentifier str = concat $ validate <$> unpack str
     validate '\'' = "prime"
     validate '"' = "quote"
     validate s = cast s
+
+    validateKeyword : String -> String
+    validateKeyword maybeKey = 
+       case find (== maybeKey) luaKeywords of
+          Just isKey => isKey ++ "__keyword"
+          Nothing => maybeKey
 
 
 

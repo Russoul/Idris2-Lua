@@ -52,6 +52,11 @@ stringifyName (CaseBlock outer i) = "case__" ++ (validateIdentifier outer) ++ "_
 stringifyName (WithBlock outer i) = "with__" ++ (validateIdentifier outer)
 stringifyName (Resolved x) = "res__" ++ show x
 
+--makes generated code ugly and unreadable but improves stringification speed A LOT
+%hide LuaCommon.indent
+%inline
+indent : Nat -> String
+indent n = ""
 
 mutual
   stringifyBinOp : Nat -> (op : String) -> LuaExpr -> LuaExpr -> String
@@ -66,50 +71,51 @@ mutual
   stringify : (n : Nat) -> LuaExpr -> String
   stringify n (LVar name) = 
     indent n ++ stringifyName name
-  stringify n (LDeclVar v name) = 
-    indent n ++ stringifyVisibility v ++ (if v == Global then "" else " ") ++ stringifyName name  
-  stringify n (LLambda args body) =
-    indent n ++ "function(" ++ sepBy (stringifyName <$> args) ", " ++ ")\n"
-                        ++ stringify (S n) body ++ "\n"
-                        ++ indent n ++ "end"
-  stringify n (LApp (LVar name) xs) =
-     stringify n (LVar name) ++ "(\n"
-                  ++ indent n ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
-
-  stringify n (LApp f xs) = 
-    indent n ++ "(\n" ++ stringify (S n) f ++ ")(\n" 
-                      ++ indent n ++ sepBy (stringify (S n) <$> xs) ",\n" ++ "\n" ++ indent n ++ ")"
+  stringify n (LDeclVar v name) = fastAppend 
+    [ indent n, stringifyVisibility v, (if v == Global then "" else " "),  stringifyName name ]  
+  stringify n (LLambda args body) = fastAppend
+    [ indent n , "function(" , sepBy (stringifyName <$> args) ", " , ")\n"
+    , stringify (S n) body , "\n"
+    , indent n , "end" ]
+  stringify n (LApp (LVar name) xs) = fastAppend
+    [ stringify n (LVar name) , "(\n"
+    , indent n , sepBy (stringify (S n) <$> xs) ",\n" , "\n" , indent n , ")" ]
+  stringify n (LApp f xs) = fastAppend
+    [ indent n , "(\n" , stringify (S n) f , ")(\n" 
+    , indent n , sepBy (stringify (S n) <$> xs) ",\n" , "\n" , indent n , ")"]  
   stringify n LNil = indent n ++ "nil"
   stringify n LFalse = indent n ++ "false"
   stringify n LTrue = indent n ++ "true"
   stringify n (LNumber num) = indent n ++ num
-  stringify n (LBigInt num) = indent n ++ "bigint:new(" ++ "\"" ++ num ++ "\"" ++ ")"
-  stringify n (LString s) = indent n ++ "\"" ++ escapeString s ++ "\""
-  stringify n (LTable kvs) = 
-        indent n ++ "{\n" 
-                  ++ sepBy ((\(k, v) => indent (S n) ++ stringifyName k ++ " = \n" ++ stringify (n + 2) v) <$> kvs) ",\n" ++ "\n" ++ indent n ++ "}"
-  stringify n (LIndex e i) = 
-    indent n ++ "(\n" ++ stringify (S n) e 
-     ++ ")\n" ++ indent n ++ "[\n" ++ stringify (S n) i ++ "\n" ++ indent n ++ "]"
-  stringify n (LSeq x y) = stringify n x ++ "\n" ++ stringify n y
-  stringify n (LFnDecl v name args body) = indent n ++ stringifyVisibility v
-                  ++ (if v == Local then " " else "") ++ "function " ++ stringifyName name ++ "(" ++ sepBy (stringifyName <$> args) ", " ++ ")\n" 
-                  ++ stringify (S n) body ++ "\n" ++ indent n ++ "end"
-  stringify n (LReturn x) = indent n ++ "return \n" ++ stringify (S n) x ++ "\n" ++ indent n ++ ""
-  stringify n (LAssign (Just vis) x y) = 
-    indent n ++ stringifyVisibility vis ++ "\n" ++ stringify n x 
-    ++ " =\n" ++ stringify (n + 2) y
-  stringify n (LAssign Nothing x y) = 
-    stringify n x ++ " =\n" ++ stringify (S n) y 
-  stringify n (LIfThenElse cond x y) = 
-    indent n ++ "if\n" ++ stringify (S n) cond ++ "\n" ++ indent n ++ "then\n" 
-                  ++ stringify (S n) x ++ "\n"
-                  ++ indent n ++ "else\n"
-                  ++ stringify (S n) y ++ "\n" ++ indent n ++ "end"
+  stringify n (LBigInt num) = fastAppend [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
+  stringify n (LString s) = fastAppend [ indent n , "\"" , escapeString s , "\"" ]
+  stringify n (LTable kvs) = fastAppend
+    [ indent n , "{\n" 
+    , sepBy ((\(k, v) => fastAppend [indent (S n) , stringifyName k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" , "\n" , indent n , "}" ]
+  stringify n (LIndex e i) = fastAppend
+    [ indent n , "(\n" , stringify (S n) e 
+    , ")\n" , indent n , "[\n" , stringify (S n) i , "\n" , indent n , "]" ]
+  stringify n (LSeq x y) = fastAppend [ stringify n x , "\n" , stringify n y ]
+  stringify n (LFnDecl v name args body) = fastAppend
+    [ indent n , stringifyVisibility v
+    , (if v == Local then " " else "") , "function " , stringifyName name , "(" , sepBy (stringifyName <$> args) ", " , ")\n" 
+    , stringify (S n) body , "\n" , indent n , "end" ]
+  stringify n (LReturn x) = fastAppend [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
+  stringify n (LAssign (Just vis) x y) = fastAppend 
+    [ indent n , stringifyVisibility vis , "\n" , stringify n x 
+    , " =\n" , stringify (n + 2) y
+    ]  
+  stringify n (LAssign Nothing x y) = fastAppend
+    [ stringify n x , " =\n" , stringify (S n) y ] 
+  stringify n (LIfThenElse cond x y) = fastAppend
+    [ indent n , "if\n" , stringify (S n) cond , "\n" , indent n , "then\n" 
+    , stringify (S n) x , "\n"
+    , indent n , "else\n"
+    , stringify (S n) y , "\n" , indent n , "end" ]
   stringify n LBreak = indent n ++ "break"
-  stringify n (LWhile cond body) = 
-    indent n ++ "while\n" ++ stringify (S n) cond ++ "\n" ++ indent n ++ "do\n"
-                  ++ stringify (S n) body ++ "\n" ++ indent n ++ "end"
+  stringify n (LWhile cond body) = fastAppend
+    [ indent n , "while\n" , stringify (S n) cond , "\n" , indent n , "do\n"
+    , stringify (S n) body , "\n" , indent n , "end" ]
   stringify n LDoNothing = ""
   stringify n (LPrimFn (Add ty) [x, y]) = stringifyBinOp n "+" x y
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
@@ -134,26 +140,26 @@ mutual
   stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y        
   stringify n (LPrimFn (GTE ty) [x, y]) = stringifyBinOp (S n) ">=" x y      
   stringify n (LPrimFn (GT ty) [x, y]) = stringifyBinOp (S n) ">" x y        
-  stringify n (LPrimFn StrLength [x]) = indent n ++ "utf8.len(\n" ++ stringify (S n) x ++ ")"
-  stringify n (LPrimFn StrHead [x]) = indent n ++ "utf8.sub(\n" ++ stringify (S n) x ++ ", 1, 1)"
-  stringify n (LPrimFn StrTail [x]) = indent n ++ "utf8.sub(\n" ++ stringify (S n) x ++ ", 2)"
-  stringify n (LPrimFn StrIndex [str, i]) = 
+  stringify n (LPrimFn StrLength [x]) = fastAppend [ indent n , "utf8.len(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn StrHead [x]) = fastAppend [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 1, 1)" ]
+  stringify n (LPrimFn StrTail [x]) = fastAppend [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 2)" ]
+  stringify n (LPrimFn StrIndex [str, i]) = fastAppend
       let strI = stringify (S n) i in
-         indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
-                        ++ ",\n" ++ strI ++ ",\n" 
-                        ++ strI ++ ")" 
-  stringify n (LPrimFn StrCons [x, xs]) =
-    indent n ++ "(\n" ++ stringify (S n) x ++ ") .. (\n" 
-                  ++ stringify (S n) xs ++ ")"
-  stringify n (LPrimFn StrAppend [x, xs]) = 
-    indent n ++ "(\n" ++ stringify (S n) x ++ ") .. (\n" 
-                  ++ stringify (S n) xs ++ ")"
-  stringify n (LPrimFn StrReverse [x]) = indent n ++ "(\n" ++ stringify (S n) x ++ "):reverse()"
-  stringify n (LPrimFn StrSubstr [offset, len, str]) = 
+         [ indent n , "utf8.sub(\n" , stringify (S n) str 
+         , ",\n" , strI , ",\n" 
+         , strI , ")" ] 
+  stringify n (LPrimFn StrCons [x, xs]) = fastAppend
+    [ indent n , "(\n" , stringify (S n) x , ") .. (\n" 
+    , stringify (S n) xs , ")" ]
+  stringify n (LPrimFn StrAppend [x, xs]) = fastAppend
+    [ indent n , "(\n" , stringify (S n) x , ") .. (\n" 
+    , stringify (S n) xs , ")" ]
+  stringify n (LPrimFn StrReverse [x]) = fastAppend [ indent n , "(\n" , stringify (S n) x , "):reverse()" ]
+  stringify n (LPrimFn StrSubstr [offset, len, str]) = fastAppend
      let strOff = stringify (S n) offset in
-         indent n ++ "utf8.sub(\n" ++ stringify (S n) str 
-         ++ ",\n" ++ strOff 
-         ++ ",\n" ++ strOff ++ " +\n" ++ stringify (S n) len ++ " - 1)"
+        [ indent n , "utf8.sub(\n" , stringify (S n) str 
+        , ",\n" , strOff 
+        , ",\n" , strOff , " +\n" , stringify (S n) len , " - 1)" ]
   stringify n (LPrimFn DoubleExp args) = stringifyFnApp n "math.pow" args
   stringify n (LPrimFn DoubleLog args) = stringifyFnApp n "math.log" args
   stringify n (LPrimFn DoubleSin args) = stringifyFnApp n "math.sin" args
@@ -173,13 +179,13 @@ mutual
   stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast IntType CharType) [x]) = indent n ++ "utf8.char(\n" ++ stringify (S n) x ++ ")"
+  stringify n (LPrimFn (Cast IntType CharType) [x]) = fastAppend $ [ indent n , "utf8.char(\n" , stringify (S n) x , ")" ]
   stringify n (LPrimFn (Cast IntType DoubleType) [x]) = stringify n x
   stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = indent n ++ "bigint:new(utf8.byte(\n" ++ stringify (S n) x ++ "))"
-  stringify n (LPrimFn (Cast CharType IntType) [x]) = indent n ++ "utf8.byte(\n" ++ stringify (S n) x ++ ")"
+  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = fastAppend [ indent n , "bigint:new(utf8.byte(\n" , stringify (S n) x , "))" ]
+  stringify n (LPrimFn (Cast CharType IntType) [x]) = fastAppend [ indent n , "utf8.byte(\n" , stringify (S n) x , ")" ]
 
 
   stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
@@ -188,13 +194,14 @@ mutual
 
 
   stringify n (LPrimFn (Cast DoubleType IntType) [x]) = stringifyFnApp n "math.floor" [x]
-  stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) = 
-    indent n ++ "bigint:new(math.floor(\n" ++ stringify (S n) x ++ "))" 
+  stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) = fastAppend
+    [ indent n , "bigint:new(math.floor(\n" , stringify (S n) x , "))" ]
   
 
   stringify n (LPrimFn (Cast ty StringType) [x]) = stringifyFnApp n "tostring" [x]
-  stringify n (LPrimFn (Cast from to) [x]) = stringify n $ mkErrorAst $ "invalid cast: from " ++
-                                                 show from ++ " to " ++ show to
+  stringify n (LPrimFn (Cast from to) [x]) = fastAppend 
+    [ stringify n $ mkErrorAst $ "invalid cast: from "
+    , show from , " to " , show to ]
   stringify n (LPrimFn BelieveMe [_, _, x]) = stringify n x
   stringify n (LPrimFn Crash [_, msg]) = stringify n $ mkErrorAst' msg 
   stringify n (LPrimFn op args) = stringify n $ mkErrorAst $ "unsupported primitive function: " ++ show op
@@ -590,13 +597,14 @@ translate defs term = do
   
   s <- newRef NameGen (MkNameGenSt 0)
   pr <- newRef Preamble (MkPreambleSt empty)
-  log 5 $ "\n\n ---------- USED DEFS ---------\n" ++ sepBy (show <$> defsUsedByNamedCExp ctm ndefs) "\n\n"
-  log 5 $ "\n\n ---------- MAIN -----------\n\n" ++ show ctm
+  coreLift $ putStrLn $ "\n\n ---------- USED DEFS ---------\n" ++ sepBy (show <$> defsUsedByNamedCExp ctm ndefs) "\n\n"
+  coreLift $ putStrLn $ "\n\n ---------- MAIN -----------\n\n" ++ show ctm
   cdefs <- traverse processDef (defsUsedByNamedCExp ctm ndefs).reverse
+  coreLift $ putStrLn $ "TRAVERSED THROUGH DEFS"
   let con_cdefs = concat cdefs
   --TODO tail call optimization
   main <- processExpr ctm
-
+  coreLift $ putStrLn $ "PROCESSED MAIN"
   supportFile <- readDataFile $ "lua" </> "support-lua.lua"
   preamble <- getPreamble
 
