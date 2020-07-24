@@ -1,6 +1,5 @@
 include config.mk
 
-
 # Idris 2 executable we're building
 NAME = idris2-lua
 TARGETDIR = build/exec
@@ -27,7 +26,7 @@ else
 endif
 
 
-.PHONY: all idris2-lua-exec ${TARGET} clean 
+.PHONY: all idris2-lua-exec ${TARGET} clean check-env
 
 all: ${TARGET} 
 
@@ -50,9 +49,14 @@ endif
 	mkdir -p ${PREFIX}/bin/${NAME}_app
 	install ${TARGETDIR}/${NAME}_app/* ${PREFIX}/bin/${NAME}_app
 
-install-support:
+install-support: check-env
 	mkdir -p ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
-	install support/lua/* ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
+	install support/lua/idris2_lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
+	cd support/lua; \
+	luarocks make --lua-version=${LuaVersion}
 
-
+check-env:
+ifndef LuaVersion
+	$(error LuaVersion is undefined)
+endif
 

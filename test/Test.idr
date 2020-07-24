@@ -92,21 +92,27 @@ print x = pure $ print_ x
 main : IO ()
 main = do
   let ins = require"inspect"
-  let big = require"bigint"
+  --let big = require"bigint"
   putStrLn$ (ins .dot "inspect")  .call[1, 2, the Int 3]{a = List _}{b = String}
 
   v <- newIORef ""
   print "enter something:"
   writeIORef v !(getLine)
-  putStrLn $ "you said " ++ !(readIORef v)
+  print $ "you said " ++ !(readIORef v)
   putStrLn $ if 1 > 2 then "not ok" else "ok"
   putStrLn $ show (the Nat 28)
+  putStrLn $ show $ whatData $ MyCons0 7
   ar <- newArray 10 {elem = Int}
   pure ()
   let from = the Int (fromInteger 10)
-  traverse (\i => writeArray ar i $ the Int i) [1 .. 8]
-  list <- ar.toList
-  putStrLn $ show $ list
+  -- traverse (\i => writeArray ar i $ the Int i) [1 .. 8]
+  -- list <- ar.toList
+  -- putStrLn $ show $ list
+  putStrLn $ show $ "ok " ++ "or not"
+  putStrLn $ show (5 == the Int 5)
+  putStrLn $ show (0 == the Integer 0)
+  putStrLn $ show (1 < the Integer 2)
+  putStrLn $ show (7 < the Int 4)
   args <- getArgs
   traverse putStrLn args
  
@@ -120,7 +126,8 @@ main = do
 
   putStrLn $ show from
   putStrLn $ show $ (the Integer (2 - 2)) == 0
-  putStrLn $ show $ factorial 100 1
-  schemeCall Unit "print" ["blah", inspect $ the (List _) [the Int 1], inspect $ the Nat 3, the Int 1]
+  putStrLn $ show $ factorial 1000 1
+  let notFull = prim__schemeCall Nat
+  putStrLn $ !(schemeCall String "string" $ ["a", "b", "c"])
 
 

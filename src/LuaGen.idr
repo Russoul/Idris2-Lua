@@ -1,6 +1,7 @@
 module LuaGen
 
 
+
 import Core.Context
 import Core.Directory
 import Compiler.Common
@@ -9,8 +10,10 @@ import Compiler.ES.RemoveUnused
 import Idris.Driver
 import Data.Vect
 import Data.List
+import Data.Buffer
 import System.File
 import System
+import Data.Bool.Extra
 import Data.Strings
 import Data.String.Extra as StrExtra
 import Data.SortedMap
@@ -18,6 +21,40 @@ import Utils.Path
 import Utils.Hex
 import public LuaCommon
 import public LuaAst
+
+
+data WithDefault : (0 a : Type) -> Maybe a -> Type where
+   MkWithDefault : {0 a : Type} -> (x : a) -> (mbdef : Maybe a) -> WithDefault a mbdef
+
+namespace WithDefault
+   export
+   get : WithDefault a mba -> a
+   get (MkWithDefault x _) = x
+
+   export
+   getDefault : {x : a} -> WithDefault a (Just x) -> a
+   getDefault _ = x
+
+   export
+   thisOrDefault : {def : a} -> (Maybe a) -> WithDefault a (Just def)
+   thisOrDefault (Just this) = MkWithDefault this _
+   thisOrDefault Nothing = MkWithDefault def _
+
+public export
+record COpts where
+   constructor MkCOptsInfo
+   storeConstructorName : WithDefault Bool (Just False)  --StoreConsName
+   dynamicSupportLib    : WithDefault Bool (Just True)   --DynSupport
+   luaVersion           : WithDefault LuaVersion Nothing --LuaVersion
+   noRequire            : WithDefault Bool (Just False)  --NoRequire
+                    --omit 'require' statements in the header of the support script
+                    --useful when you want to run idris in environment where not all libraries
+                    --are supported or dynamic library loading is turned off
+                    --as an example you can use Idris do develop for iOS or android using third party tools
+
+--TODO local const table with integer indices of function values for faster calls
+--TODO use <const> when targeting lua 5.4 ? (should enable declaration of 200+ local functions which is
+--impossible for mutable local varibles (due to lua's own limitation)
 
 %hide Core.TT.Visibility
 
@@ -52,6 +89,8 @@ stringifyName (CaseBlock outer i) = "case__" ++ (validateIdentifier outer) ++ "_
 stringifyName (WithBlock outer i) = "with__" ++ (validateIdentifier outer)
 stringifyName (Resolved x) = "res__" ++ show x
 
+
+
 --makes generated code ugly and unreadable but improves stringification speed A LOT
 %hide LuaCommon.indent
 %inline
@@ -59,16 +98,61 @@ indent : Nat -> String
 indent n = ""
 
 mutual
-  stringifyBinOp : Nat -> (op : String) -> LuaExpr -> LuaExpr -> String
-  stringifyBinOp n op x y = stringify n x ++ " " ++ op ++ "\n" 
-                                              ++ stringify (S n) y
+  stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> String
+  stringifyBinOp n op x y = fastAppend [stringify n x
+                                       , " ", op
+                                       , "\n"
+                                       , stringify (S n) y] 
+  
+  stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> String
+  stringifyMethodApp n method x y = fastAppend [stringify n x
+                                               , ":", method
+                                               , "(\n" 
+                                               ,stringify (S n) y, ")"]
   stringifyFnApp : Nat -> (fn : String) -> Vect n LuaExpr -> String
   stringifyFnApp n fn args = 
     indent n ++ fn ++ "(\n" 
                   ++ sepBy' (stringify (S n) <$> args) ",\n" 
                   ++ "\n" ++ indent n ++ ")"
   
-  stringify : (n : Nat) -> LuaExpr -> String
+  --TODO add compiler option to throw when it encounters unsupported ops
+  opNotSupportedErr : {auto copts : COpts} -> String -> String
+  opNotSupportedErr op = "error(\"[Idris2] Operation not supported: '" ++ op ++ "'\")" 
+
+  stringifyBitOp : {auto copts : COpts}
+     -> Nat 
+     -> PrimFn n 
+     -> Vect n LuaExpr
+     -> LuaVersion
+     -> String
+  stringifyBitOp n (ShiftL IntType) [x, y] ver with (ver >= Lua53) 
+     stringifyBitOp n (ShiftL IntType) [x, y] ver | True = stringifyBinOp n "<<" x y
+     stringifyBitOp n (ShiftL IntType) [x, y] ver | False = stringifyFnApp n "bit32.lshift" [x, y]
+  stringifyBitOp n (ShiftR IntType) [x, y] ver with (ver >= Lua53) 
+     stringifyBitOp n (ShiftR IntType) [x, y] ver | True = stringifyBinOp n ">>" x y
+     stringifyBitOp n (ShiftR IntType) [x, y] ver | False = stringifyFnApp n "bit32.rshift" [x, y]
+  stringifyBitOp n (BAnd IntType) [x, y] ver with (ver >= Lua53) 
+     stringifyBitOp n (BAnd IntType) [x, y] ver | True = stringifyBinOp n "&" x y
+     stringifyBitOp n (BAnd IntType) [x, y] ver | False = stringifyFnApp n "bit32.band" [x, y]
+  stringifyBitOp n (BOr IntType) [x, y] ver with (ver >= Lua53) 
+     stringifyBitOp n (BOr IntType) [x, y] ver | True = stringifyBinOp n "|" x y
+     stringifyBitOp n (BOr IntType) [x, y] ver | False = stringifyFnApp n "bit32.bor" [x, y]
+  stringifyBitOp n (BXOr IntType) [x, y] ver with (ver >= Lua53) 
+     stringifyBitOp n (BXOr IntType) [x, y] ver | True = stringifyBinOp n "~" x y
+     stringifyBitOp n (BXOr IntType) [x, y] ver | False = stringifyFnApp n "bit32.bxor" [x, y]
+  stringifyBitOp n (ShiftL IntegerType) [x, y] ver = stringifyMethodApp n "shiftleft" x y 
+  stringifyBitOp n (ShiftR IntegerType) [x, y] ver = stringifyMethodApp n "shiftright" x y 
+  stringifyBitOp n op _ _ = opNotSupportedErr (show op)
+  
+  stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
+  stringifyString str = "utf8.char(" ++ sepBy (show . ord <$> unpack str) ", " ++ ") --[[ " ++ escapeString(str) ++ "--]]"
+
+  --TODO this is slow, use mutable preallocated buffers
+  stringify :
+        {auto copts : COpts}
+     -> (n : Nat) 
+     -> LuaExpr 
+     -> String
   stringify n (LVar name) = 
     indent n ++ stringifyName name
   stringify n (LDeclVar v name) = fastAppend 
@@ -88,10 +172,12 @@ mutual
   stringify n LTrue = indent n ++ "true"
   stringify n (LNumber num) = indent n ++ num
   stringify n (LBigInt num) = fastAppend [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
-  stringify n (LString s) = fastAppend [ indent n , "\"" , escapeString s , "\"" ]
+  stringify n (LString s) = fastAppend [ indent n , stringifyString s ]
   stringify n (LTable kvs) = fastAppend
     [ indent n , "{\n" 
     , sepBy ((\(k, v) => fastAppend [indent (S n) , stringifyName k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" , "\n" , indent n , "}" ]
+  stringify n (LIndex (LVar name) i) = fastAppend
+    [ indent n, stringifyName name , "\n[\n" , stringify (S n) i , "\n" , indent n , "]" ]
   stringify n (LIndex e i) = fastAppend
     [ indent n , "(\n" , stringify (S n) e 
     , ")\n" , indent n , "[\n" , stringify (S n) i , "\n" , indent n , "]" ]
@@ -120,21 +206,20 @@ mutual
   stringify n (LPrimFn (Add ty) [x, y]) = stringifyBinOp n "+" x y
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
-  stringify n (LPrimFn (Div IntType) [x, y]) = stringifyBinOp n "//" x y
+  stringify n (LPrimFn (Div IntType) [x, y]) with (copts.luaVersion.get >= Lua53) 
+     stringify n (LPrimFn (Div IntType) [x, y]) | True
+       = stringifyBinOp n "//" x y
+     stringify n (LPrimFn (Div IntType) [x, y]) | False 
+       = stringifyFnApp n "idris__div" [x, y]
   stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Div DoubleType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Mod ty) [x ,y]) = stringifyBinOp n "%" x y
   stringify n (LPrimFn (Neg ty) [x]) = indent n ++ "- (" ++ stringify Z x ++ ")"
-  stringify n (LPrimFn (ShiftL ty) [x, y]) = stringifyBinOp n "<<" x y
-  stringify n (LPrimFn (ShiftR ty) [x, y]) = stringifyBinOp n ">>" x y
-  stringify n (LPrimFn (BAnd ty) [x, y]) = stringifyBinOp n "&" x y
-  stringify n (LPrimFn (BOr ty) [x, y]) = stringifyBinOp n "|" x y
-  stringify n (LPrimFn (BXOr ty) [x, y]) = stringifyBinOp n "~" x y
-  -- stringify n (LPrimFn (LT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<")] 
-  -- stringify n (LPrimFn (LTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "<=")]    
-  -- stringify n (LPrimFn (EQ IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString "==")]    
-  -- stringify n (LPrimFn (GTE IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">=")]    
-  -- stringify n (LPrimFn (GT IntegerType) [x, y]) = stringifyFnApp (S n) "bigint.compare" [x, y, (LString ">")]    
+  stringify n (LPrimFn op@(ShiftL _) args) = stringifyBitOp n op args copts.luaVersion.get
+  stringify n (LPrimFn op@(ShiftR _) args) = stringifyBitOp n op args copts.luaVersion.get
+  stringify n (LPrimFn op@(BAnd _) args)   = stringifyBitOp n op args copts.luaVersion.get
+  stringify n (LPrimFn op@(BOr _) args)    = stringifyBitOp n op args copts.luaVersion.get
+  stringify n (LPrimFn op@(BXOr _) args)   = stringifyBitOp n op args copts.luaVersion.get
   stringify n (LPrimFn (LT ty) [x, y]) = stringifyBinOp (S n) "<" x y     
   stringify n (LPrimFn (LTE ty) [x, y]) = stringifyBinOp (S n) "<=" x y  
   stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y        
@@ -163,8 +248,8 @@ mutual
   stringify n (LPrimFn DoubleExp args) = stringifyFnApp n "math.pow" args
   stringify n (LPrimFn DoubleLog args) = stringifyFnApp n "math.log" args
   stringify n (LPrimFn DoubleSin args) = stringifyFnApp n "math.sin" args
-  stringify n (LPrimFn DoubleCos args) = stringifyFnApp n "math.cos" args
-  stringify n (LPrimFn DoubleTan args) = stringifyFnApp n "math.tan" args
+  stringify n (LPrimFn DoubleCos args) = stringifyFnApp n "math.cos" args     --TODO create local bindings for math functions
+  stringify n (LPrimFn DoubleTan args) = stringifyFnApp n "math.tan" args     -- for faster invokation
   stringify n (LPrimFn DoubleASin args) = stringifyFnApp n "math.asin" args
   stringify n (LPrimFn DoubleACos args) = stringifyFnApp n "math.acos" args
   stringify n (LPrimFn DoubleATan args) = stringifyFnApp n "math.atan" args
@@ -232,7 +317,8 @@ replaceNames names (LTable ys) =
 replaceNames names (LSeq x y) = LSeq (replaceNames names x) (replaceNames names y)
 replaceNames names (LFnDecl vis name args body) = LFnDecl vis name args (replaceNames names body)
 replaceNames names (LReturn x) = LReturn (replaceNames names x)
-replaceNames names (LAssign v x y) = LAssign v (replaceNames names x) (replaceNames names y)
+replaceNames names (LAssign Nothing x y) = LAssign Nothing (replaceNames names x) (replaceNames names y) --assignment
+replaceNames names (LAssign (Just v) x y) = LAssign (Just v) x (replaceNames names y) --declaration with initial value
 replaceNames names (LIfThenElse cond tr fa) = 
   LIfThenElse (replaceNames names cond) (replaceNames names tr)
     (replaceNames names fa)
@@ -243,6 +329,9 @@ replaceNames names LDoNothing = LDoNothing
 
 data NameGen : Type where
 data Preamble : Type where
+
+
+
 
 record NameGenSt where
   constructor MkNameGenSt
@@ -314,79 +403,123 @@ processConstant WorldVal = pure $ LString (show WorldVal)
 processConstant c = throw $ InternalError ("Unsupported constant '" ++ (show c) ++ "' detected")
 
 
+|||As lua does not support general expressions with return values
+|||We can emulate this with code blocks and local variables
+|||Instead of returning a code block we assign its return value to a local variable
+|||And pass both along the compilation pipeline
+|||Code blocks build up until the pipeline reaches back any function definition
+|||Stockpiled block then gets pasted into the body of that nearest containing function
+LuaBlock : Type
+LuaBlock = (LuaExpr {-Block (may be empty)-}, LuaExpr {-Expr representing the return value of that block-})
+
+justReturn : LuaExpr -> LuaBlock
+justReturn expr = (LDoNothing, expr)
+
+mkCaseImpl : {auto ref : Ref NameGen NameGenSt}
+    -> {auto opts : COpts}
+    -> (retn : Name)
+    -> (branches : List (LuaBlock {-condition-}, (LuaBlock) {-arm-}))
+    -> (mbElse : Maybe LuaBlock)
+    -> Core LuaExpr
+mkCaseImpl retn (((blockA, cond), (blockB, arm)) :: xs) mbElse = do
+  blockC <- mkCaseImpl retn xs mbElse
+  let ifBranch = LIfThenElse cond (blockB <+> LAssign Nothing (LVar retn) arm) blockC
+  pure $ blockA <+> ifBranch
+mkCaseImpl retn [] (Just (blockA, els)) =
+  pure $ blockA <+> LAssign Nothing (LVar retn) els
+mkCaseImpl retn [] Nothing = 
+  pure $ LAssign Nothing (LVar retn) LNil --retn is by default initialized to `nil`
+
+
+mkCase : {auto ref : Ref NameGen NameGenSt}
+    -> {auto opts : COpts}
+    -> (branches : List (LuaBlock {-condition-}, (LuaBlock) {-arm-}))
+    -> (mbElse : Maybe LuaBlock)
+    -> Core LuaBlock
+mkCase branches mbElse = 
+  do
+    name <- genName
+    blockA <- mkCaseImpl name branches mbElse
+    pure (LDeclVar Local name <+> blockA, LVar name)
+
+
 mutual 
 
-  processConsMatch : (cons : LuaExpr) 
-              -> (alts : List LuaExpr {-var-}) 
-              -> (maybeDefault : Maybe LuaExpr)
-              -> Core LuaExpr
-  processConsMatch cons (alt :: alts) md =
-      let cond = LPrimFn (EQ StringType) [LIndex cons (LString "tag"), LIndex alt (LString "tag")] in
-      pure $ LApp (LVar ifThenElseName) [
-                  cond,
-                  LIndex alt (LString "res"),                                        -- already a lambda
-                  LLambda [] $ LReturn $ !(processConsMatch cons alts md)] 
-  processConsMatch _ [] (Just def) = pure def
-  processConsMatch _ [] Nothing = pure (mkErrorAst "no matching pattern")
 
+  extNames : List Name
+  extNames = [NS ["IORef", "Data"] (UN "prim__newIORef")
+             ,NS ["IORef", "Data"] (UN "prim__readIORef")
+             ,NS ["IORef", "Data"] (UN "prim__writeIORef")
+             ,NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")
+             ,NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")
+             ,NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")
+             ,NS ["PrimIO"] (UN "prim__schemeCall")
+             ,NS ["Info", "System"] (UN "prim__os")
+             ,NS ["Uninhabited", "Prelude"] (UN "void")]
 
-  processConstMatch : (const : LuaExpr)
-              -> (alts : List (LuaExpr, Constant))
-              -> (maybeDefault : Maybe LuaExpr) 
-              -> Core LuaExpr
-  processConstMatch const ((alt, constant) :: alts) md =
-    do
-      let (Just constTy) = constantTy constant
-        | Nothing => throw $ InternalError ("cannot match on " ++ (show constant))
-      let cond = LPrimFn (EQ constTy) [const, LIndex alt (LString "const")] 
-      pure $ LApp (LVar ifThenElseName) [
-                        cond,
-                        LIndex alt (LString "res"),                                  --already a lambda
-                        LLambda [] $ LReturn $ !(processConstMatch const alts md)    
-]
-  processConstMatch _ [] (Just def) = pure def
-  processConstMatch _ [] Nothing = pure (mkErrorAst "no matching constant")
-
-  
-  processPrimExt : {auto c : Ref NameGen NameGenSt}
+  --fully applied external name
+  --can be inlined
+  --THIS IS NOT A DEFINITION !
+  processExtCall : 
+            {auto c : Ref NameGen NameGenSt}
+            -> {auto opts : COpts}
             -> Name
             -> List NamedCExp
-            -> Core LuaExpr
-  processPrimExt (NS ["IORef", "Data"] (UN "prim__newIORef")) [_, v, _] =
-    pure $ LTable [(UN "val", !(processExpr v))]
-  processPrimExt (NS ["IORef", "Data"] (UN "prim__readIORef")) [_, r, _] =
-    pure $ LIndex !(processExpr r) (LString "val")
-  processPrimExt (NS ["IORef", "Data"] (UN "prim__writeIORef")) [_, r, v, _] = 
-    pure $ LApp (LLambda [] $ LAssign Nothing (LIndex !(processExpr r) (LString "val")) !(processExpr v)) []
-  processPrimExt (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) [_, len, init, _] = 
+            -> Core LuaBlock
+  processExtCall (NS ["IORef", "Data"] (UN "prim__newIORef")) [_, v, _] =
     do
-      len <- processExpr len
-      init <- processExpr init
-      let table = LVar (UN "arr")
-      let counter = LVar (UN "i")
+      (blockA, v) <- processExpr v
+      pure (blockA, LTable [(UN "val", v)])
+  processExtCall (NS ["IORef", "Data"] (UN "prim__readIORef")) [_, r, _] =
+    do
+      (blockA, r) <- processExpr r
+      pure (blockA, LIndex r (LString "val"))
+  processExtCall (NS ["IORef", "Data"] (UN "prim__writeIORef")) [_, r, v, _] = 
+    do
+      (blockA, r) <- processExpr r
+      (blockB, v) <- processExpr v
+      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [(UN "tag", LString "0")] {-Unit-})
+  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) [_, len, init, _] = 
+    do
+      (blockA, len) <- processExpr len
+      (blockB, init) <- processExpr init
+      arrname <- genName
+      iname <- genName
+      let table = LVar arrname
+      let counter = LVar iname
       let loop = LWhile  
                (LPrimFn (LTE IntType) [counter, len]) $
                (LAssign Nothing (LIndex table counter) init)
                <+> (LAssign Nothing counter (LPrimFn (Add IntType) [counter, LNumber "1"]))
-      pure $ LApp (LLambda [] 
-       (    LAssign (Just Local) table (LTable [])
-        <+> LAssign (Just Local) counter (LNumber "1")
-        <+> loop <+> LReturn table)) []        
-  processPrimExt (NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")) [_, ar, i, _] =
+      pure (blockA <+> blockB <+> LAssign (Just Local) table (LTable []) 
+            <+> LAssign (Just Local) counter (LNumber "1") <+> loop, table)  
+  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")) [_, ar, i, _] =
     do
-      ar <- processExpr ar
-      i <- processExpr i
-      pure (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"] ))
-  processPrimExt (NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")) [_, ar, i, v, _] = 
+      (blockA, ar) <- processExpr ar
+      (blockB, i) <- processExpr i
+      pure (blockA <+> blockB, LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
+  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")) [_, ar, i, v, _] = 
     do
-      ar <- processExpr ar
-      i <- processExpr i
-      v <- processExpr v
-      pure $ LApp (LLambda [] $ LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])  ) v) []
-  processPrimExt name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
-  processPrimExt name@(NS ["Info", "System"] (UN "prim__os")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
-  processPrimExt name@(NS ["Uninhabited", "Prelude"] (UN "void")) args = pure $ LApp (LVar name) !(traverse processExpr args) --defined in support file
-  processPrimExt prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
+      (blockA, ar) <- processExpr ar
+      (blockB, i) <- processExpr i
+      (blockC, v) <- processExpr v
+      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [(UN "tag", LString "0")] {-Unit-}) 
+  processExtCall name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = 
+    do
+      args' <- traverse processExpr args
+      let (blockA, args) = unzip args'
+      pure (concat blockA, LApp (LVar name) args) --defined in support file
+  processExtCall name@(NS ["Info", "System"] (UN "prim__os")) args =
+    do
+      args' <- traverse processExpr args
+      let (blockA, args) = unzip args'
+      pure (concat blockA, LApp (LVar name) args) --defined in support file
+  processExtCall name@(NS ["Uninhabited", "Prelude"] (UN "void")) args = 
+    do
+      args' <- traverse processExpr args
+      let (blockA, args) = unzip args'
+      pure (concat blockA, LApp (LVar name) args) --defined in support file
+  processExtCall prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
 
 
    
@@ -409,24 +542,25 @@ mutual
         else searchForeign xs
 
 
-  processForeign : 
+  --Foreign definition
+  --may be implemented as a function / binding 
+  processForeignDef : 
              {auto refs : Ref Ctxt Defs} 
+             -> {auto opts : COpts}
              -> {auto c : Ref NameGen NameGenSt}
              -> {auto preamble : Ref Preamble PreambleSt}
              -> Name
              -> List String
              -> List CFType
              -> CFType
-             -> Core LuaExpr
-  processForeign name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
-    do
-      pure LDoNothing   
-  processForeign name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
-    do
-      pure LDoNothing   
-  processForeign name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
-    pure LDoNothing -- in support file
-  processForeign name hints argtys retty = do
+             -> Core ()
+  processForeignDef name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
+    pure ()   
+  processForeignDef name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
+    pure ()   
+  processForeignDef name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
+    pure () 
+  processForeignDef name hints argtys retty = do
       let ((def, maybeReq), replace) 
           = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName name, Nothing), False)
       log 2 $ "using %foreign " ++ def
@@ -444,180 +578,260 @@ mutual
       
       if replace then do
             addDefToPreamble (show name) ((stringifyName name) ++ " = " ++ def) False
-            pure LDoNothing 
+            pure () 
          else
-            pure LDoNothing
+            pure ()
 
   processPrimCmp : {auto c : Ref NameGen NameGenSt} 
+            -> {auto opts : COpts}
             -> PrimFn arity 
             -> Vect arity NamedCExp 
-            -> Core LuaExpr
+            -> Core LuaBlock
   processPrimCmp op args = do
-      args <- traverseVect processExpr args
-      pure $ LApp (LVar ifThenElseName) [
-                      LPrimFn op args,
-                      LLambda [] $ LReturn $ LNumber "1",
-                      LLambda [] $ LReturn $ LNumber "0"]
-
+      args' <- traverseVect processExpr args
+      let (blockA, args) = unzip args'
+      (blockB, cas) <- mkCase 
+                [(justReturn $ LPrimFn op args, justReturn $ LNumber "1")]
+                (Just $ justReturn $ LNumber "0")
+      pure (concat blockA <+> blockB, cas)          
+                
 
   processExpr : {auto c : Ref NameGen NameGenSt} 
-         -> NamedCExp -> Core LuaExpr
-  processExpr (NmLocal _ n) = pure $ LVar n
-  processExpr (NmRef _ n) = pure $ LVar n
+         -> {auto opts : COpts}
+         -> NamedCExp
+         -> Core LuaBlock
+  processExpr (NmLocal _ n) = pure (LDoNothing, LVar n)
+  processExpr (NmRef _ n) = pure (LDoNothing, LVar n)
   processExpr (NmLam _ n e) =
-    pure $ LLambda [n] (LReturn !(processExpr e))
+    do
+      (ce, e) <- processExpr e 
+      pure (LDoNothing, LLambda [n] (ce <+> LReturn e)) --paste inner block here
   processExpr (NmApp _ f args) =
     do
-      cf <- processExpr f
-      cargs <- traverse processExpr args
-      pure $ LApp cf cargs
-  processExpr (NmPrimVal _ c) = processConstant c
+      (cf, f) <- processExpr f
+      args <- traverse processExpr args
+      let (cargs, args) = unzip args
+      pure (cf <+> concat cargs, LApp f args)
+  processExpr (NmPrimVal _ c) = pure (LDoNothing, !(processConstant c))
   processExpr (NmOp _ op@(EQ _) args) = processPrimCmp op args
   processExpr (NmOp _ op@(LT _) args) = processPrimCmp op args
   processExpr (NmOp _ op@(LTE _) args) = processPrimCmp op args
   processExpr (NmOp _ op@(GT _) args) = processPrimCmp op args
   processExpr (NmOp _ op@(GTE _) args) = processPrimCmp op args
-  processExpr (NmOp _ StrIndex [str, i]) = 
-    pure $ LPrimFn StrIndex [!(processExpr str), LPrimFn (Add IntType) [!(processExpr i), LNumber "1"]]
+  processExpr (NmOp _ StrIndex [str, i]) = do
+    (blockA, str) <- processExpr str
+    (blockB, i) <- processExpr i
+    pure (blockA <+> blockB, LPrimFn StrIndex [str, LPrimFn (Add IntType) [i, LNumber "1"]])
   processExpr (NmOp _ StrSubstr [offset, len, str]) = 
-   pure $ LPrimFn StrSubstr [LPrimFn (Add IntType) [!(processExpr offset), LNumber "1"], !(processExpr len), !(processExpr str)]
+    do
+      (blockA, offset) <- processExpr offset
+      (blockB, len) <- processExpr len
+      (blockC, str) <- processExpr str
+      pure (blockA <+> blockB <+> blockC, LPrimFn StrSubstr [LPrimFn (Add IntType) [offset, LNumber "1"], len, str])
   processExpr (NmOp _ op args) = 
     do
       args <- traverseVect processExpr args
-      pure $ LPrimFn op args
+      let (block, args) = unzip args 
+      pure (concat block, LPrimFn op args)
   processExpr (NmConCase _ sc alts def) =
     do
-      csc <- processExpr sc
+      (blockA, sc) <- processExpr sc
       let conVar = !genName
-      armVars <- traverse (\_ => genName) [1.. alts.length]
-      calts <- traverse (\(alt, var) => processConsAlt conVar var alt) (zip alts armVars) 
-      cdef <- lift $ processExpr <$> def
-      --let cdef = (\def => LLambda [] (LReturn def)) <$> cdef_
-      ifThenElse <- processConsMatch (LVar conVar) (LVar <$> armVars) cdef
-      pure $ LApp (LLambda [] (LAssign (Just Local) (LVar conVar) csc
-         <+> concat calts
-         <+> LReturn ifThenElse)) []
+      alts <- traverse (\alt => processConsAlt (LVar conVar) alt) alts 
+      mdef <- lift $ processExpr <$> def
+      (blockB, cas) <- mkCase alts mdef
+      pure (blockA <+> LAssign (Just Local) (LVar conVar) sc <+> blockB, cas)   
   processExpr (NmConstCase _ sc alts def) = 
     do
-      csc <- processExpr sc
+      (blockA, sc) <- processExpr sc
       let constVar = !genName
-      armVars <- traverse (\_ => genName) [1.. alts.length]
-      calts1 <- traverse (\(alt, var) => processConstAlt var alt) (zip alts armVars)
-      let (calts, consts) = unzip calts1
-      cdef <- lift $ processExpr <$> def
-      --let cdef = (\def => LLambda [] (LReturn def)) <$> cdef_
-      ifThenElse <- processConstMatch (LVar constVar) (zip (LVar <$> armVars) consts) cdef
-      pure $ LApp (LLambda [] (LAssign (Just Local) (LVar constVar) csc
-          <+> concat calts
-          <+> LReturn ifThenElse)) []
-  processExpr (NmExtPrim _ p args) = processPrimExt p args
-  processExpr (NmCon _ n tag args) =
+      alts <- traverse (\alt => processConstAlt (LVar constVar) alt) alts
+      mdef <- lift $ processExpr <$> def
+      (blockB, cas) <- mkCase alts mdef
+      pure (blockA <+> LAssign (Just Local) (LVar constVar) sc <+> blockB, cas)
+  processExpr (NmExtPrim _ p args) = do
+     --coreLift $ putStrLn $ "Ext call: " ++ stringifyName p ++ " with args " ++ show args
+     processExtCall p args
+  processExpr (NmCon _ n mbtag args) =
     do
-      cargs <- traverse processExpr args
-      let tps = zipWith (\i, arg => (UN $ "t" ++ (show i), arg)) [1..(List.length cargs)] cargs
-      pure $ LTable ([(UN "tag", LString (processTag n tag))] ++ tps)
+      args <- traverse processExpr args
+      let (blockA, args) = unzip args
+      let conArgs = zipWith (\i, arg => (UN $ "arg" ++ (show i), arg)) [1..args.length] args
+      let mbName = if opts.storeConstructorName.get then [(UN "name", LString $ show n), (UN "numArgs", LNumber $ show args.length)] else []
+      pure (concat blockA, LTable ([(UN "tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
   processExpr (NmDelay _ t) =
     do
-      ct <- processExpr t
-      pure $ LLambda [] (LReturn ct)
+      (blockA, t) <- processExpr t
+      pure (blockA, LLambda [] (LReturn t)) --no need to paste the block into lambda
   processExpr (NmForce _ t) =
     do
-      ct <- processExpr t
-      pure $ LApp ct []
+      (blockA, t) <- processExpr t
+      pure (blockA, LApp t [])
   processExpr (NmLet _ n val sc) =
     do
-      cval <- processExpr val
-      scs <- processExpr sc
-      pure $ LApp (LLambda [] (LAssign (Just Local) (LVar n) cval <+> LReturn scs)) []
+      (blockA, val) <- processExpr val
+      (blockB, cs) <- processExpr sc
+      pure (blockA <+> LAssign (Just Local) (LVar n) val <+> blockB, cs) 
   processExpr (NmErased _) =
-    pure LNil
+    pure (LDoNothing, LNil)
   processExpr (NmCrash _ msg) =
-    pure $ mkErrorAst msg
+    pure (LDoNothing, mkErrorAst msg)
 
+  mutual --TODO copy-pasted(whole mutual block) from Compiler.Scheme.Common, PR export flag
+   used : Name -> NamedCExp -> Bool
+   used n (NmLocal fc n') = n == n'
+   used n (NmRef _ _) = False
+   used n (NmLam _ _ sc) = used n sc
+   used n (NmLet _ _ v sc) = used n v || used n sc
+   used n (NmApp _ f args) = used n f || anyTrue (map (used n) args)
+   used n (NmCon _ _ _ args) = anyTrue (map (used n) args)
+   used n (NmOp _ _ args) = anyTrue (toList (map (used n) args))
+   used n (NmExtPrim _ _ args) = anyTrue (map (used n) args)
+   used n (NmForce _ t) = used n t
+   used n (NmDelay _ t) = used n t
+   used n (NmConCase _ sc alts def)
+         = used n sc || anyTrue (map (usedCon n) alts)
+               || maybe False (used n) def
+   used n (NmConstCase _ sc alts def)
+         = used n sc || anyTrue (map (usedConst n) alts)
+               || maybe False (used n) def
+   used n _ = False
+
+   usedCon : Name -> NamedConAlt -> Bool
+   usedCon n (MkNConAlt _ _ _ sc) = used n sc
+
+   usedConst : Name -> NamedConstAlt -> Bool
+   usedConst n (MkNConstAlt _ sc) = used n sc 
 
   processConsAlt : {auto c : Ref NameGen NameGenSt}
-             -> Name
-             -> Name
+             -> {auto opts : COpts}
+             -> (cons : LuaExpr)
              -> (alt : NamedConAlt) 
-             -> Core LuaExpr
-  processConsAlt cons fresh (MkNConAlt name maybeTag args res) = 
+             -> Core (LuaBlock {-condition-}, LuaBlock {-arm-})
+  processConsAlt cons (MkNConAlt name mbtag args res') = 
     do
-      cres <- processExpr res
-      let nargs = args.length
-      let bindings = zipWith (\i, n => (n, LIndex (LVar cons) (indexConstructorArg i))) [1..nargs] args
-
-      pure $ LAssign (Just Local) (LVar fresh) $ LTable [(UN "tag", LString (processTag name maybeTag)),(UN "res", replaceNames bindings (LLambda [] (LReturn cres)))]
+      (blockA, res) <- processExpr res'
+      -- let bindings = zipWith (\i, n => (n, LIndex cons (indexConstructorArg i))) [1..args.length] args
+      let bindings = zipWith (\i, n => if used n res' then LAssign (Just Local) (LVar n) $ LIndex cons (indexConstructorArg i) else LDoNothing) [1..args.length] args
+      let cond = LPrimFn (EQ StringType) [LIndex cons (LString "tag"), LString (processTag name mbtag)]
+      pure (justReturn cond, (concat bindings <+> blockA {-blockA uses those bindings-}, res))
 
 
   processConstAlt : {auto c : Ref NameGen NameGenSt}
-                -> Name
+                -> {auto opts : COpts}
+                -> (cons : LuaExpr)
                 -> (alt : NamedConstAlt)
-                -> Core (LuaExpr, Constant)
-  processConstAlt fresh (MkNConstAlt c res) =
+                -> Core (LuaBlock {-condition-}, LuaBlock {-arm-})
+  processConstAlt cons (MkNConstAlt c res) =
     do
-      cres <- processExpr res
-      pure $ (LAssign (Just Local) (LVar fresh) $ LTable [(UN "const", !(processConstant c)), (UN "res", LLambda [] (LReturn cres))], c)
+      let (Just constTy) = constantTy c
+        | Nothing => throw $ InternalError ("cannot match on " ++ (show c))
+
+
+      (blockA, res) <- processExpr res
+      let cond = LPrimFn (EQ constTy) [cons, !(processConstant c)] 
+      pure (justReturn cond, (blockA, res))
 
 
   indexConstructorArg : Nat -> LuaExpr
-  indexConstructorArg i = LString $ "t" ++ (show i)
+  indexConstructorArg i = LString $ "arg" ++ (show i)
 
 
   processTag : Name -> Maybe Int -> String
   processTag n Nothing = show n
   processTag _ (Just i) = show i
 
-
+  --TODO skip primitive functions (arithmetic ops, str ops, etc..)
+  -- as those never going to be applied normally
   processDef : 
         {auto c: Ref NameGen NameGenSt} 
+        -> {auto opts : COpts}
         -> {auto refs : Ref Ctxt Defs}
         -> {auto preamble : Ref Preamble PreambleSt}
         -> (Name, FC, NamedDef) 
-        -> Core LuaExpr
+        -> Core LuaExpr {-block of code-}
   processDef (n, _, MkNmFun args expr) =
-    do
-      cexpr <- processExpr expr
-      pure $ LFnDecl Global n args (LReturn cexpr)
+   if (find (== n) extNames) .isJust || (find (== show n) primFnNames) .isJust
+      then
+         pure LDoNothing --do not gen names for prim fns, ext fns and foreign fns, done separately
+      else do   
+         --coreLift $ putStrLn $ "def: " ++ stringifyName n
+         (blockA, expr) <- processExpr expr
+         pure $ LFnDecl Global n args $ blockA <+> (LReturn expr) --paste code block into function def
   processDef (n, _, MkNmError expr) = 
     throw $ (InternalError (show expr))
-  processDef (n, _, MkNmForeign hints argsty retty) = processForeign n hints argsty retty
+  processDef (n, _, MkNmForeign hints argsty retty) = --those are added into the preamble
+    do
+      --coreLift $ putStrLn $ "Foreign def: " ++ stringifyName n
+      processForeignDef n hints argsty retty
+      pure LDoNothing
   processDef (n, _, MkNmCon _ _ _) =
-    pure LDoNothing
+    pure LDoNothing  --we do not need to predefine structures in lua
 
 
 builtinSupportDefs : List LuaExpr -- add top level lua defs from here or through support library
 builtinSupportDefs = []
 
 
+getCOpts : Core COpts
+getCOpts = 
+   do
+      opt1 <- coreLift $ getEnv "StoreConsName"
+      opt2 <- coreLift $ getEnv "DynSupport"
+      (Just opt3) <- coreLift $ do str <- getEnv "LuaVersion"
+                                   pure (parseLuaVersion <<= str)
+         | _ => throw (UserError "Could not parse Lua version from $LuaVersion, format: X.X[.X]")
+      opt4 <- coreLift $ getEnv "NoRequire"
+      pure $ MkCOptsInfo 
+               (thisOrDefault (opt1 >>= parseEnvBool)) 
+               (thisOrDefault (opt2 >>= parseEnvBool)) 
+               (MkWithDefault opt3 _) 
+               (thisOrDefault (opt4 >>= parseEnvBool))
+
+
 translate : Ref Ctxt Defs -> ClosedTerm -> Core String
 translate defs term = do
+  coreLift $ putStrLn "Lua compilation started [0/5]"
+  opts <- getCOpts
+  coreLift $ putStrLn ("Using " ++ show opts.luaVersion.get)
   cdata <- getCompileData Cases term
+  coreLift $ putStrLn "Got compile data [1/5]"
   let ndefs = cdata.namedDefs
   let ctm = forget cdata.mainExpr
-  
+  coreLift $ putStrLn "Looked up direct names [2/5]"
+  --let used = defsUsedByNamedCExp ctm ndefs 
   s <- newRef NameGen (MkNameGenSt 0)
   pr <- newRef Preamble (MkPreambleSt empty)
-  coreLift $ putStrLn $ "\n\n ---------- USED DEFS ---------\n" ++ sepBy (show <$> defsUsedByNamedCExp ctm ndefs) "\n\n"
-  coreLift $ putStrLn $ "\n\n ---------- MAIN -----------\n\n" ++ show ctm
-  cdefs <- traverse processDef (defsUsedByNamedCExp ctm ndefs).reverse
-  coreLift $ putStrLn $ "TRAVERSED THROUGH DEFS"
+  cdefs <- traverse processDef ndefs.reverse
+  coreLift $ putStrLn "Compiled definitions [3/5]"
   let con_cdefs = concat cdefs
   --TODO tail call optimization
-  main <- processExpr ctm
-  coreLift $ putStrLn $ "PROCESSED MAIN"
-  supportFile <- readDataFile $ "lua" </> "support-lua.lua"
+  (block, main) <- processExpr ctm
+  coreLift $ putStrLn "Compiled main [4/5]"
   preamble <- getPreamble
 
+  support <- if opts.dynamicSupportLib.get
+                   then
+                     pure "require(\"idris2_lua\")"
+                   else
+                     readDataFile $ "lua" </> "idris2_lua.lua"
 
-  pure $        " --------- SUPPORT DEFS ---------\n" 
-             ++ supportFile ++ "\n" 
-             ++ stringify Z (concat builtinSupportDefs) 
-             ++ "\n---------- PREAMBLE DEFS ----------\n"
-             ++ sepBy preamble.values "\n" ++ "\n\n"
-             ++ "\n---------- CTX DEFS ----------\n"
-             ++ stringify Z con_cdefs
-             ++ "\n--------- RETURN ---------\n" ++ stringify Z main
 
+  let string = fastAppend
+             [ " --------- SUPPORT DEFS ---------\n" 
+             , "idris__luaVersion = " ++ show (index opts.luaVersion.get) ++ "\n" --sets target Lua version to be used in support
+             , "idris__noRequire  = " ++ (toLower . show) opts.noRequire.get ++ "\n"
+             , support , "\n" 
+             , stringify Z (concat builtinSupportDefs) 
+             , "\n---------- PREAMBLE DEFS ----------\n"
+             , sepBy preamble.values "\n" , "\n\n"
+             , "\n---------- CTX DEFS ----------\n"
+             , stringify Z con_cdefs
+             , "\n--------- RETURN ---------\n" 
+             , stringify Z block
+             , stringify Z main ]
+  coreLift $ putStrLn "Stringified lua [5/5]"
+  pure string
 
 
 compile : Ref Ctxt Defs -> (tmpDir : String) -> (outputDir : String) ->
@@ -635,9 +849,13 @@ execute : Ref Ctxt Defs -> (tmpDir : String) -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
   res <- translate defs term
   let file = "generated.lua"
+  lua <- coreLift $
+    do
+      mbDefined <- getEnv "LuaExe" 
+      pure $ mbDefined `orElse` "lua"
   (Right ())  <- coreLift $ writeFile (tmpDir </> file) res
      | Left err => throw $ FileErr (tmpDir </> file) err
-  _ <- coreLift $ system $ "lua " ++ "\"" ++ escapeString (tmpDir </> file) ++ "\""
+  _ <- coreLift $ system $ "'" ++ lua ++ "' " ++ "\"" ++ escapeString (tmpDir </> file) ++ "\""
   pure ()
 
 luaCodegen : Codegen

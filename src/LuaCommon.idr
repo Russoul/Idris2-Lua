@@ -9,6 +9,96 @@ import Data.Vect
 import Data.List
 import Utils.Hex
 
+infixr 1 <<=
+
+export
+swap : (a -> b -> c) -> b -> a -> c
+swap f x y = f y x
+
+export
+(<<=) : (Monad m) => (a -> m b) -> (m a) -> m b
+(<<=) = swap (>>=)
+
+public export
+data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
+
+namespace Strings
+   public export
+   ||| replaces all occurances of literal @lit 
+   ||| in string @str 
+   replaceAll :
+         (lit : String) 
+      -> (str : String)
+      -> String
+   replaceAll lit str with (str == "") 
+      replaceAll lit str | False =  
+         let other = replaceAll lit (substr (length lit) (length str `minus` length lit) str) in
+             if isPrefixOf lit str
+                then replaceAll lit (substr (length lit) (length str `minus` length lit) str)
+                else case strUncons str of
+                          Just (head, rest) => strCons head (replaceAll lit rest)
+                          Nothing => ""
+      replaceAll lit str | True = "" 
+         
+
+namespace LuaVersion
+
+   export
+   index : LuaVersion -> Int
+   index Lua51 = 51
+   index Lua52 = 52
+   index Lua53 = 53
+   index Lua54 = 54
+
+   export
+   fromIndex : Int -> Maybe LuaVersion
+   fromIndex 51 = Just Lua51
+   fromIndex 52 = Just Lua52
+   fromIndex 53 = Just Lua53
+   fromIndex 54 = Just Lua54
+   fromIndex _  = Nothing
+   
+   export
+   Eq LuaVersion where
+      Lua51 == Lua51 = True
+      Lua52 == Lua52 = True
+      Lua53 == Lua53 = True
+      Lua54 == Lua54 = True
+      _     ==     _ = False
+
+   export
+   Show LuaVersion where
+      show ver = 
+       let index = index ver
+           major = index `div` 10
+           minor = index `mod` 10
+       in
+           "Lua" ++ show major ++ "." ++ show minor
+   
+   export
+   Ord LuaVersion where
+      compare v v' = compare (index v) (index v')
+
+
+
+   export
+   parseLuaVersion : String -> Maybe LuaVersion
+   parseLuaVersion str = helper ((trim . toLower) str)
+   where
+      helper : String -> Maybe LuaVersion
+      helper x = 
+         let noprefix = 
+                if isPrefixOf "lua" x
+                  then drop 3 x
+                  else x
+             nodots = replaceAll "." noprefix
+             nodashes = replaceAll "-" nodots
+             firstTwo = take 2 nodashes
+         in      
+             do int <- parseInteger {a = Int} firstTwo
+                fromIndex int
+
+
 
 namespace Data.List
   export
@@ -75,7 +165,15 @@ validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
           Just isKey => isKey ++ "__keyword"
           Nothing => maybeKey
 
-
+public export
+parseEnvBool : String -> Maybe Bool
+parseEnvBool str = 
+   case str.toLower of
+      "true" => Just True
+      "1" => Just True
+      "false" => Just False
+      "0" => Just False
+      _ => Nothing
 
 
 public export
