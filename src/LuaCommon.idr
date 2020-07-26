@@ -2,7 +2,7 @@ module LuaCommon
 
 
 import Core.Core
-
+import Core.Name
 import Data.Strings
 import Data.String.Extra as StrExtra
 import Data.Vect
@@ -122,49 +122,55 @@ luaKeywords = ["and", "break", "do", "else", "elseif", "end",
                "local", "nil", "not", "or", "repeat", "return",
                "then", "true", "until", "while"]
 
+--lua's set of chars that form a valid identifier is restricted to alphanumeric characters and underscore
+--in order to resemble at least some level of readability of generated names below 'pseudotranslation' is utilized
+--this is not failproof, i.e. you can find 2 different identifiers such that after running both of them though this function
+--you will get same output. But that is highly unlikely and would be a result of using bad naming conventions
 public export
 validateIdentifier : String -> String
 validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
   where
     validate : Char -> String
-    validate ':' = "col"
-    validate ';' = "semicol"
-    validate ',' = "comma"
-    validate '+' = "plus"
-    validate '-' = "minus"
-    validate '*' = "mult"
-    validate '\\' = "bslash"
-    validate '/' = "fslash"
-    validate '=' = "eq"
-    validate '.' = "dot"
-    validate '?' = "what"
-    validate '|' = "pipe"
-    validate '&' = "and"
-    validate '>' = "gt"
-    validate '<' = "lt"
-    validate '!' = "exclam"
-    validate '@' = "at"
-    validate '$' = "dollar"
-    validate '%' = "percent"
-    validate '^' = "arrow"
-    validate '~' = "tilde"
-    validate '#' = "hash"
-    validate ' ' = "_"
-    validate '(' = "lpar"
-    validate ')' = "rpar"
-    validate '[' = "lbrack"
-    validate ']' = "rbrack"
-    validate '{' = "lbrace"
-    validate '}' = "rbrace"
-    validate '\'' = "prime"
-    validate '"' = "quote"
-    validate s = cast s
+    validate ':' = "_col_"
+    validate ';' = "_semicol_"
+    validate ',' = "_comma_"
+    validate '+' = "_plus_"
+    validate '-' = "_minus_"
+    validate '*' = "_mult_"
+    validate '\\' = "_bslash_"
+    validate '/' = "_fslash_"
+    validate '=' = "_eq_"
+    validate '.' = "_dot_"
+    validate '?' = "_what_"
+    validate '|' = "_pipe_"
+    validate '&' = "_and_"
+    validate '>' = "_gt_"
+    validate '<' = "_lt_"
+    validate '!' = "_exclam_"
+    validate '@' = "_at_"
+    validate '$' = "_dollar_"
+    validate '%' = "_percent_"
+    validate '^' = "_arrow_"
+    validate '~' = "_tilde_"
+    validate '#' = "_hash_"
+    validate ' ' = "_space_"
+    validate '(' = "_lpar_"
+    validate ')' = "_rpar_"
+    validate '[' = "_lbrack_"
+    validate ']' = "_rbrack_"
+    validate '{' = "_lbrace_"
+    validate '}' = "_rbrace_"
+    validate '\'' = "_prime_"
+    validate '"' = "_quote_"
+    validate s with (ord s > 160) --unicode codepoints are above 160
+      validate s | False = cast s
+      validate s | True = "_uni_" ++ cast (ord s) ++ "_"
 
     validateKeyword : String -> String
-    validateKeyword maybeKey = 
-       case find (== maybeKey) luaKeywords of
-          Just isKey => isKey ++ "__keyword"
-          Nothing => maybeKey
+    validateKeyword mbkw = 
+       case find (== mbkw) luaKeywords of
+          Just kw => "_kw_" ++ kw ++ "_"
+          Nothing => mbkw
 
 public export
 parseEnvBool : String -> Maybe Bool

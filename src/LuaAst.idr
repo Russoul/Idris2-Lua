@@ -20,7 +20,8 @@ Eq Visibility where
 
 
 public export 
-data LuaExpr = LVar Name
+data LuaExpr = LLVar Name
+              | LGVar Name
               | LLambda (List Name) LuaExpr
               | LApp LuaExpr (List LuaExpr)
               | LPrimFn (PrimFn arity) (Vect arity LuaExpr)
@@ -30,10 +31,10 @@ data LuaExpr = LVar Name
               | LNumber String
               | LBigInt String
               | LString String
-              | LTable (List (Name, LuaExpr))
+              | LTable (List (String, LuaExpr))
               | LIndex LuaExpr LuaExpr
               | LSeq LuaExpr LuaExpr
-              | LFnDecl Visibility Name (List Name) LuaExpr
+              | LFnDecl Name (List Name) LuaExpr --global function decl
               | LReturn LuaExpr
               | LAssign (Maybe Visibility) LuaExpr LuaExpr  --decl with initial val and reassignment
               | LDeclVar Visibility Name
@@ -41,6 +42,7 @@ data LuaExpr = LVar Name
               | LBreak
               | LWhile LuaExpr LuaExpr
               | LDoNothing
+              | LComment String
 
 public export
 Semigroup LuaExpr where

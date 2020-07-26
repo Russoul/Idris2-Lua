@@ -62,7 +62,8 @@ record COpts where
 --TODO local const table with integer indices of function values for faster calls
 --TODO use <const> when targeting lua 5.4 ? (should enable declaration of 200+ local functions which is
 --impossible for mutable local varibles (due to lua's own limitation)
-
+--TODO use strings as backend for Int type in lua 5.1 and 5.2 as in these versions maximum integer precision is 52 bits
+--even 48bits if you are to use Buffers 
 
 
 export
@@ -71,7 +72,7 @@ logLine :
    -> String
    -> Core ()
 logLine str with (opts.debugOutput.get)
-   logLine str | True = coreLift $ putStrLn ("[Debug]" ++ str)
+   logLine str | True = coreLift $ putStrLn ("[Debug] " ++ str)
    logLine str | False = pure ()
 
 export 
@@ -92,10 +93,10 @@ stringifyVisibility Local = "local"
 
 mkErrorAst : String -> LuaExpr
 mkErrorAst str = 
-    LApp (LVar (UN "error")) [LString str]
+    LApp (LGVar (UN "error")) [LString str]
 mkErrorAst' : LuaExpr -> LuaExpr
 mkErrorAst' str = 
-    LApp (LVar (UN "error")) [str]
+    LApp (LGVar (UN "error")) [str]
 
 
 ifThenElseName : Name
@@ -104,20 +105,34 @@ ifThenElseName = UN "idris__ifThenElse"
 getArgsName : Name
 getArgsName = UN "idris__getArgs"
 
+stringifyNameGlobal : Name -> String
+stringifyNameGlobal (NS ns n) = join "." (reverse ns) ++ "." ++ stringifyNameGlobal n
+stringifyNameGlobal (UN x) = x
+stringifyNameGlobal (MN x y) = "{" ++ x ++ ":" ++ show y ++ "}"
+stringifyNameGlobal (PV n d) = "{P:" ++ stringifyNameGlobal n ++ ":" ++ show d ++ "}"
+stringifyNameGlobal (DN _ n) = stringifyNameGlobal n
+stringifyNameGlobal (Nested (outer, idx) inner)
+    = show outer ++ ":" ++ show idx ++ ":" ++ stringifyNameGlobal inner
+stringifyNameGlobal (CaseBlock outer i) = "case[" ++ show i ++ "]" ++ outer
+stringifyNameGlobal (WithBlock outer i) = "with[" ++ show i ++ "]" ++ outer
+stringifyNameGlobal (Resolved x) = "$resolved" ++ show x
 
-stringifyName : Name -> String
-stringifyName (NS ns n) = join "_" (validateIdentifier <$> reverse ns) ++ "_" ++ stringifyName n
-stringifyName (UN x) = validateIdentifier x
-stringifyName (MN x y) = "__" ++ (validateIdentifier x) ++ show y
-stringifyName (PV n d) = "pat__" ++ stringifyName n ++ "_" ++ show d
-stringifyName (DN _ n) = stringifyName n
-stringifyName (Nested (outer, idx) inner)
-    = "n__" ++ show outer ++ "_" ++ show idx ++ "_" ++ stringifyName inner
-stringifyName (CaseBlock outer i) = "case__" ++ (validateIdentifier outer) ++ "_" ++ show i
-stringifyName (WithBlock outer i) = "with__" ++ (validateIdentifier outer)
-stringifyName (Resolved x) = "res__" ++ show x
+stringifyNameMangle : Name -> String
+stringifyNameMangle (NS ns n) = join "_" (validateIdentifier <$> reverse ns) ++ "_" ++ stringifyNameMangle n
+stringifyNameMangle (UN x) = validateIdentifier x
+stringifyNameMangle (MN x y) = "__" ++ (validateIdentifier x) ++ show y
+stringifyNameMangle (PV n d) = "pat__" ++ stringifyNameMangle n ++ "_" ++ show d
+stringifyNameMangle (DN _ n) = stringifyNameMangle n
+stringifyNameMangle (Nested (outer, idx) inner)
+    = "n__" ++ show outer ++ "_" ++ show idx ++ "_" ++ stringifyNameMangle inner
+stringifyNameMangle (CaseBlock outer i) = "case__" ++ (validateIdentifier outer) ++ "_" ++ show i
+stringifyNameMangle (WithBlock outer i) = "with__" ++ (validateIdentifier outer) ++ "_" ++ show i
+stringifyNameMangle (Resolved x) = "res__" ++ show x
 
 
+stringifyName : Visibility -> Name -> String
+stringifyName Local name = stringifyNameMangle name
+stringifyName Global name = "idris[" ++ show (stringifyNameGlobal name) ++ "]"
 
 --makes generated code ugly and unreadable but improves stringification speed A LOT
 %hide LuaCommon.indent
@@ -183,7 +198,9 @@ mutual
   stringifyBitOp n op _ _ = [opNotSupportedErr (show op)]
   
   stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
-  stringifyString str = "utf8.char(" ++ join ", " (show . ord <$> unpack str) ++ ") --[[ " ++ escapeString(str) ++ "--]]"
+  stringifyString str =
+   let vstr = show str in
+       "utf8.char(" ++ join ", " (show . ord <$> unpack str) ++ ") --[[ " ++ substr 1 (vstr.length `minus` 2) vstr ++ "--]]"
 
   stringify :
         --{auto buf : Ref LuaCode StrBuffer}
@@ -191,27 +208,39 @@ mutual
      -> (n : Nat) 
      -> LuaExpr 
      -> DeferedStr 
-  stringify n (LVar name) = 
-    [indent n, stringifyName name]
-  stringify n (LDeclVar v name) = 
-    [ indent n, stringifyVisibility v, (if v == Global then "" else " "),  stringifyName name ]  
+  stringify n (LLVar name) = 
+    [indent n, stringifyName Local name]
+  stringify n (LGVar name) =
+    [indent n, stringifyName Global name]
+  stringify n (LDeclVar Local name) = 
+    [ indent n, stringifyVisibility Local, " ", stringifyName Local name]  
+  stringify n (LDeclVar Global name) = 
+    [ indent n, stringifyVisibility Global, stringifyName Global name]  
   stringify n (LLambda args body) =
     [ indent n 
     , "function(" 
-    , sepBy (pure . stringifyName <$> args) ", " 
+    , sepBy (pure . stringifyName Local <$> args) ", " 
     , ")\n"
     , (stringify (S n) body) , "\n"
     , indent n 
     , "end" ]
-  stringify n (LApp (LVar name) xs) =
-    [ (stringify n (LVar name)) 
+  stringify n (LApp lvar@(LLVar name) xs) = --less noise
+    [ (stringify n lvar) 
     , "(\n"
     , indent n 
     , sepBy (stringify (S n) <$> xs) ",\n" 
     , "\n" 
     , indent n 
     , ")" ]
-  stringify n (LApp f xs) = 
+  stringify n (LApp gvar@(LGVar name) xs) = --less noise
+    [ (stringify n gvar) 
+    , "(\n"
+    , indent n 
+    , sepBy (stringify (S n) <$> xs) ",\n" 
+    , "\n" 
+    , indent n 
+    , ")" ]
+  stringify n (LApp f xs) =                 --general case
     [ indent n , "(\n" 
     , stringify (S n) f 
     , ")(\n" 
@@ -224,20 +253,28 @@ mutual
   stringify n (LNumber num) = [indent n, num]
   stringify n (LBigInt num) = [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
   stringify n (LString s) = [ indent n , stringifyString s ]
+  stringify n (LComment s) = [ indent n, "--[[ ",  s, " --]]"]
   stringify n (LTable kvs) =
     [ indent n , "{\n" 
-    , sepBy ((\(k, v) => [indent (S n) , stringifyName k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
+    , sepBy ((\(k, v) => [indent (S n) ,k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
     , "\n" 
     , indent n 
     , "}" ]
-  stringify n (LIndex (LVar name) i) =
+  stringify n (LIndex (LLVar name) i) = --less noise
     [ indent n
-    , stringifyName name 
+    , stringifyName Local name 
     , "\n[\n" , stringify (S n) i 
     , "\n" 
     , indent n 
     , "]" ]
-  stringify n (LIndex e i) =
+  stringify n (LIndex (LGVar name) i) = --less noise
+    [ indent n
+    , stringifyName Global name 
+    , "\n[\n" , stringify (S n) i 
+    , "\n" 
+    , indent n 
+    , "]" ]
+  stringify n (LIndex e i) =            --general case
     [ indent n 
     , "(\n" ,stringify (S n) e 
     , ")\n" 
@@ -248,12 +285,12 @@ mutual
     , indent n 
     , "]" ]
   stringify n (LSeq x y) = [ stringify n x , "\n" , stringify n y ]
-  stringify n (LFnDecl v name args body) =
+  stringify n (LFnDecl name args body) =
     [ indent n 
-    , stringifyVisibility v
-    , (if v == Local then " " else "") 
-    , "function " , stringifyName name 
-    , "(" , sepBy (pure . stringifyName <$> args) ", " , ")\n" 
+    , stringifyName Global name
+    , " = "
+    , "function "
+    , "(" , sepBy (pure . stringifyName Local <$> args) ", " , ")\n" 
     , stringify (S n) body , "\n" , indent n , "end" ]
   stringify n (LReturn x) = [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
   stringify n (LAssign (Just vis) x y) = 
@@ -380,39 +417,40 @@ mutual
   stringify n (LPrimFn op args) = stringify n $ mkErrorAst $ "unsupported primitive function: " ++ show op
 
 
-replaceNames : List(Name, LuaExpr) -> LuaExpr -> LuaExpr
-replaceNames names (LVar x) =
-  case lookup x names of
-       Nothing => LVar x
-       Just e => e
-replaceNames names (LDeclVar v n) = LDeclVar v n       
-replaceNames names (LLambda args body) =
-  LLambda args $ replaceNames names body
-replaceNames names (LApp x args) = 
-  LApp (replaceNames names x) (replaceNames names <$> args) 
-replaceNames names (LPrimFn name args) = LPrimFn name (replaceNames names <$> args) 
-replaceNames names LNil = LNil
-replaceNames names LTrue = LTrue
-replaceNames names LFalse = LFalse
-replaceNames names (LNumber x) = LNumber x
-replaceNames names (LString x) = LString x
-replaceNames names (LBigInt x) = LBigInt x
-replaceNames names (LIndex expr key) = LIndex (replaceNames names expr) (replaceNames names key)
-replaceNames names (LTable ys) = 
-  LTable (map (\(key, val) => (
-                   key,
-                   replaceNames names val)) ys)
-replaceNames names (LSeq x y) = LSeq (replaceNames names x) (replaceNames names y)
-replaceNames names (LFnDecl vis name args body) = LFnDecl vis name args (replaceNames names body)
-replaceNames names (LReturn x) = LReturn (replaceNames names x)
-replaceNames names (LAssign Nothing x y) = LAssign Nothing (replaceNames names x) (replaceNames names y) --assignment
-replaceNames names (LAssign (Just v) x y) = LAssign (Just v) x (replaceNames names y) --declaration with initial value
-replaceNames names (LIfThenElse cond tr fa) = 
-  LIfThenElse (replaceNames names cond) (replaceNames names tr)
-    (replaceNames names fa)
-replaceNames names LBreak = LBreak
-replaceNames names (LWhile cond body) = LWhile (replaceNames names cond) (replaceNames names body)
-replaceNames names LDoNothing = LDoNothing
+-- replaceNames : List(Name, LuaExpr) -> LuaExpr -> LuaExpr
+-- replaceNames names (LVar x) =
+--   case lookup x names of
+--        Nothing => LVar x
+--        Just e => e
+-- replaceNames names (LDeclVar v n) = LDeclVar v n       
+-- replaceNames names (LLambda args body) =
+--   LLambda args $ replaceNames names body
+-- replaceNames names (LApp x args) = 
+--   LApp (replaceNames names x) (replaceNames names <$> args) 
+-- replaceNames names (LPrimFn name args) = LPrimFn name (replaceNames names <$> args) 
+-- replaceNames names LNil = LNil
+-- replaceNames names LTrue = LTrue
+-- replaceNames names LFalse = LFalse
+-- replaceNames names (LNumber x) = LNumber x
+-- replaceNames names (LString x) = LString x
+-- replaceNames names (LBigInt x) = LBigInt x
+-- replaceNames names (LIndex expr key) = LIndex (replaceNames names expr) (replaceNames names key)
+-- replaceNames names (LTable ys) = 
+--   LTable (map (\(key, val) => (
+--                    key,
+--                    replaceNames names val)) ys)
+-- replaceNames names (LSeq x y) = LSeq (replaceNames names x) (replaceNames names y)
+-- replaceNames names (LFnDecl vis name args body) = LFnDecl vis name args (replaceNames names body)
+-- replaceNames names (LReturn x) = LReturn (replaceNames names x)
+-- replaceNames names (LAssign Nothing x y) = LAssign Nothing (replaceNames names x) (replaceNames names y) --assignment
+-- replaceNames names (LAssign (Just v) x y) = LAssign (Just v) x (replaceNames names y) --declaration with initial value
+-- replaceNames names (LIfThenElse cond tr fa) = 
+--   LIfThenElse (replaceNames names cond) (replaceNames names tr)
+--     (replaceNames names fa)
+-- replaceNames names LBreak = LBreak
+-- replaceNames names (LWhile cond body) = LWhile (replaceNames names cond) (replaceNames names body)
+-- replaceNames names LDoNothing = LDoNothing
+-- replaceNames names (LComment s) = LComment s
 
 
 
@@ -430,7 +468,7 @@ genName =
     s <- get NameGen
     let i = nextName s
     put NameGen (record{nextName $= (+1)} s)
-    pure $ MN "idris__" i
+    pure $ MN "__gen__" i
 
 getPreamble :
            {auto p : Ref Preamble PreambleSt}
@@ -506,12 +544,12 @@ mkCaseImpl : {auto ref : Ref NameGen NameGenSt}
     -> Core LuaExpr
 mkCaseImpl retn (((blockA, cond), (blockB, arm)) :: xs) mbElse = do
   blockC <- mkCaseImpl retn xs mbElse
-  let ifBranch = LIfThenElse cond (blockB <+> LAssign Nothing (LVar retn) arm) blockC
+  let ifBranch = LIfThenElse cond (blockB <+> LAssign Nothing (LLVar retn) arm) blockC
   pure $ blockA <+> ifBranch
 mkCaseImpl retn [] (Just (blockA, els)) =
-  pure $ blockA <+> LAssign Nothing (LVar retn) els
+  pure $ blockA <+> LAssign Nothing (LLVar retn) els
 mkCaseImpl retn [] Nothing = 
-  pure $ LAssign Nothing (LVar retn) LNil --retn is by default initialized to `nil`
+  pure $ LAssign Nothing (LLVar retn) LNil --retn is by default initialized to `nil`
 
 
 mkCase : {auto ref : Ref NameGen NameGenSt}
@@ -523,7 +561,7 @@ mkCase branches mbElse =
   do
     name <- genName
     blockA <- mkCaseImpl name branches mbElse
-    pure (LDeclVar Local name <+> blockA, LVar name)
+    pure (LDeclVar Local name <+> blockA, LLVar name)
 
 
 mutual 
@@ -538,7 +576,7 @@ mutual
              ,NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")
              ,NS ["PrimIO"] (UN "prim__schemeCall")
              ,NS ["Info", "System"] (UN "prim__os")
-             ,NS ["Uninhabited", "Prelude"] (UN "void")]
+             ,NS ["Uninhabited", "Prelude"] (UN "void")] --TODO add other implemented names
 
   --fully applied external name
   --can be inlined
@@ -552,7 +590,7 @@ mutual
   processExtCall (NS ["IORef", "Data"] (UN "prim__newIORef")) [_, v, _] =
     do
       (blockA, v) <- processExpr v
-      pure (blockA, LTable [(UN "val", v)])
+      pure (blockA, LTable [("val", v)])
   processExtCall (NS ["IORef", "Data"] (UN "prim__readIORef")) [_, r, _] =
     do
       (blockA, r) <- processExpr r
@@ -561,15 +599,15 @@ mutual
     do
       (blockA, r) <- processExpr r
       (blockB, v) <- processExpr v
-      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [(UN "tag", LString "0")] {-Unit-})
+      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [("tag", LString "0")] {-Unit-})
   processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) [_, len, init, _] = 
     do
       (blockA, len) <- processExpr len
       (blockB, init) <- processExpr init
       arrname <- genName
       iname <- genName
-      let table = LVar arrname
-      let counter = LVar iname
+      let table = LLVar arrname
+      let counter = LLVar iname
       let loop = LWhile  
                (LPrimFn (LTE IntType) [counter, len]) $
                (LAssign Nothing (LIndex table counter) init)
@@ -586,22 +624,22 @@ mutual
       (blockA, ar) <- processExpr ar
       (blockB, i) <- processExpr i
       (blockC, v) <- processExpr v
-      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [(UN "tag", LString "0")] {-Unit-}) 
+      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [("tag", LString "0")] {-Unit-}) 
   processExtCall name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = 
     do
       args' <- traverse processExpr args
       let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LVar name) args) --defined in support file
+      pure (concat blockA, LApp (LGVar name) args) --defined in support file
   processExtCall name@(NS ["Info", "System"] (UN "prim__os")) args =
     do
       args' <- traverse processExpr args
       let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LVar name) args) --defined in support file
+      pure (concat blockA, LApp (LGVar name) args) --defined in support file
   processExtCall name@(NS ["Uninhabited", "Prelude"] (UN "void")) args = 
     do
       args' <- traverse processExpr args
       let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LVar name) args) --defined in support file
+      pure (concat blockA, LApp (LGVar name) args) --defined in support file
   processExtCall prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
 
 
@@ -645,14 +683,14 @@ mutual
     pure () 
   processForeignDef name hints argtys retty = do
       let ((def, maybeReq), replace) 
-          = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName name, Nothing), False)
+          = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
       log 2 $ "using %foreign " ++ def
       case maybeReq of
            (Just pack) => do 
                          log 2 $ "requiring " ++ pack
                          addDefToPreamble 
                           ("$" ++ pack) 
-                           ((stringifyName $ UN pack) ++ " = require('" ++ pack ++ "')")
+                           ((stringifyName Global (UN pack)) ++ " = require('" ++ pack ++ "')")
                             True -- its ok to require the same package multiple times, ignore all but first
 
                                                              -- '$' makes sure all require statements
@@ -660,7 +698,8 @@ mutual
            Nothing => pure ()
       
       if replace then do
-            addDefToPreamble (show name) ((stringifyName name) ++ " = " ++ def) False
+            let strname = stringifyName Global name    
+            addDefToPreamble strname (strname ++ " = " ++ def) False
             pure () 
          else
             pure ()
@@ -674,8 +713,8 @@ mutual
       args' <- traverseVect processExpr args
       let (blockA, args) = unzip args'
       (blockB, cas) <- mkCase 
-                [(justReturn $ LPrimFn op args, justReturn $ LNumber "1")]
-                (Just $ justReturn $ LNumber "0")
+                [(justReturn $ LPrimFn op args, justReturn (LNumber "1"))]
+                (Just $ justReturn (LNumber "0"))
       pure (concat blockA <+> blockB, cas)          
                 
 
@@ -683,8 +722,8 @@ mutual
          -> {auto opts : COpts}
          -> NamedCExp
          -> Core LuaBlock
-  processExpr (NmLocal _ n) = pure (LDoNothing, LVar n)
-  processExpr (NmRef _ n) = pure (LDoNothing, LVar n)
+  processExpr (NmLocal _ n) = pure (LDoNothing, LLVar n <+> LComment "local") --TODO comments are for debug only
+  processExpr (NmRef _ n) = pure (LDoNothing, LGVar n <+> LComment "ref")     --TODO comments are for debug only
   processExpr (NmLam _ n e) =
     do
       (ce, e) <- processExpr e 
@@ -720,20 +759,19 @@ mutual
     do
       (blockA, sc) <- processExpr sc
       let conVar = !genName
-      alts <- traverse (\alt => processConsAlt (LVar conVar) alt) alts 
+      alts <- traverse (\alt => processConsAlt (LLVar conVar) alt) alts 
       mdef <- lift $ processExpr <$> def
       (blockB, cas) <- mkCase alts mdef
-      pure (blockA <+> LAssign (Just Local) (LVar conVar) sc <+> blockB, cas)   
+      pure (blockA <+> LAssign (Just Local) (LLVar conVar) sc <+> blockB, cas)   
   processExpr (NmConstCase _ sc alts def) = 
     do
       (blockA, sc) <- processExpr sc
       let constVar = !genName
-      alts <- traverse (\alt => processConstAlt (LVar constVar) alt) alts
+      alts <- traverse (\alt => processConstAlt (LLVar constVar) alt) alts
       mdef <- lift $ processExpr <$> def
       (blockB, cas) <- mkCase alts mdef
-      pure (blockA <+> LAssign (Just Local) (LVar constVar) sc <+> blockB, cas)
+      pure (blockA <+> LAssign (Just Local) (LLVar constVar) sc <+> blockB, cas)
   processExpr (NmExtPrim _ p args) = do
-     --coreLift $ putStrLn $ "Ext call: " ++ stringifyName p ++ " with args " ++ show args
      processExtCall p args
   processExpr (NmCon _ n mbtag args) =
     do
@@ -744,9 +782,9 @@ mutual
       --                , LLambda [] $ mkErrorAst ("arg" ++ show i ++ " is nil")
       --                , LLambda [] $ LReturn $ arg]) 
       --                <$> zip args [1..args.length]
-      let conArgs = zipWith (\i, arg => (UN $ "arg" ++ (show i), arg)) [1..args.length] args
-      let mbName = if opts.storeConstructorName.get then [(UN "name", LString $ show n), (UN "numArgs", LNumber $ show args.length)] else []
-      pure (concat blockA, LTable ([(UN "tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
+      let conArgs = zipWith (\i, arg => ("arg" ++ (show i), arg)) [1..args.length] args
+      let mbName = if opts.storeConstructorName.get then [("name", LString $ stringifyName Global n), ("num", LNumber $ show args.length)] else []
+      pure (concat blockA, LTable ([("tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
   processExpr (NmDelay _ t) =
     do
       (blockA, t) <- processExpr t
@@ -759,7 +797,7 @@ mutual
     do
       (blockA, val) <- processExpr val
       (blockB, cs) <- processExpr sc
-      pure (blockA <+> LAssign (Just Local) (LVar n) val <+> blockB, cs) 
+      pure (blockA <+> LAssign (Just Local) (LLVar n) val <+> blockB, cs) 
   processExpr (NmErased _) =
     pure (LDoNothing, LNil)
   processExpr (NmCrash _ msg) =
@@ -800,7 +838,7 @@ mutual
     do
       (blockA, res) <- processExpr res'
       -- let bindings = zipWith (\i, n => (n, LIndex cons (indexConstructorArg i))) [1..args.length] args
-      let bindings = zipWith (\i, n => if used n res' then LAssign (Just Local) (LVar n) $ LIndex cons (indexConstructorArg i) else LDoNothing) [1..args.length] args
+      let bindings = zipWith (\i, n => if used n res' then LAssign (Just Local) (LLVar n) $ LIndex cons (indexConstructorArg i) else LDoNothing) [1..args.length] args
       let cond = LPrimFn (EQ StringType) [LIndex cons (LString "tag"), LString (processTag name mbtag)]
       pure (justReturn cond, (concat bindings <+> blockA {-blockA uses those bindings-}, res))
 
@@ -826,11 +864,11 @@ mutual
 
 
   processTag : Name -> Maybe Int -> String
-  processTag n Nothing = show n
+  processTag n Nothing = stringifyName Global n
   processTag _ (Just i) = show i
 
   --TODO skip primitive functions (arithmetic ops, str ops, etc..)
-  -- as those never going to be applied normally
+  -- as those never going to be applied normally, EDIT: actually they are, e.g. in chez tests...
   processDef : 
         {auto c: Ref NameGen NameGenSt} 
         -> {auto opts : COpts}
@@ -845,7 +883,7 @@ mutual
       else do   
          --coreLift $ putStrLn $ "def: " ++ stringifyName n
          (blockA, expr) <- processExpr expr
-         pure $ LFnDecl Global n args $ blockA <+> (LReturn expr) --paste code block into function def
+         pure $ LFnDecl n args $ blockA <+> (LReturn expr) --paste code block into function def
   processDef (n, _, MkNmError expr) = 
     throw $ (InternalError (show expr))
   processDef (n, _, MkNmForeign hints argsty retty) = --those are added into the preamble
@@ -913,11 +951,15 @@ translate defs term = do
 
 
   let stringPlan : DeferedStr =
-             [ " --------- SUPPORT DEFS ---------\n" 
-             , "idris__luaVersion = " ++ show (index opts.luaVersion.get) ++ "\n" --sets target Lua version to be used in support
-             , "idris__noRequire  = " ++ (toLower . show) opts.noRequire.get ++ "\n"
+             [ " --------- SUPPORT DEFS ---------\n"
+             , "idris = {}\n"
+             , "idris.null = {}\n"
+             , "local null = idris.null\n"
+             , "idris.luaVersion = " ++ show (index opts.luaVersion.get) ++ "\n" --sets target Lua version to be used in support
+             , "idris.noRequire  = " ++ (toLower . show) opts.noRequire.get ++ "\n"
              , support , "\n" 
-             , stringify Z (concat builtinSupportDefs) 
+             , stringify Z (concat builtinSupportDefs)
+             , "local idris = idris"
              , "\n---------- PREAMBLE DEFS ----------\n"
              , join "\n" preamble.values , "\n\n"
              , "\n---------- CTX DEFS ----------\n"
