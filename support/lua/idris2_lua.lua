@@ -28,6 +28,14 @@ function idris__addenv(key, val)
       _ENV[key] = val
 	end	
 end	
+
+function idris__getenv(key)
+   if idris__luaVersion < 52 then
+	  return getfenv()[key]
+   else
+	  return _ENV[key]
+	end 
+end 
 														 
 local idris__abs = math.abs
 local idris__modf = math.modf
@@ -553,7 +561,7 @@ end
 
 --TODO uname may not work correctly if ulimit -Sn <num> is not set to higher number ...
 function idris__getOS()
-	local raw_os_name = ''
+	local raw_os_name
 	local env_OS = os.getenv('OS')
 	if env_OS then
 		raw_os_name = env_OS
@@ -567,12 +575,12 @@ function idris__getOS()
 			if popen_status then
 				if popen_result then popen_result:close() end
 				-- Unix-based OS
-				raw_os_name = io.popen('uname -s -o 2>/dev/null','r'):read(idris__readl)
-				raw_arch_name = io.popen('uname -m -o 2>/dev/null','r'):read(idris__readl)
+				raw_os_name = io.popen('uname -s 2>/dev/null','r'):read(idris__readl)
          end
 		end	
-	end	
-   raw_os_name = (raw_os_name):lower()
+	  end	
+	if not raw_os_name then raw_os_name = "unknown" end
+   raw_os_name = raw_os_name:lower()
 
 	local os_patterns = {
 		['windows'] = 'windows',
@@ -602,7 +610,7 @@ function System_Info_prim__os()
 end	
 
 function PrimIO_prim__schemeCall(ret, name, args, world)
-  local f = _ENV["idris__" .. name]
+  local f = idris__getenv("idris__" .. name)
   if f then
 	  return f(args)
   else

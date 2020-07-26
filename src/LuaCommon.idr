@@ -7,8 +7,8 @@ import Data.Strings
 import Data.String.Extra as StrExtra
 import Data.Vect
 import Data.List
+import Data.Buffer
 import Utils.Hex
-
 infixr 1 <<=
 
 export
@@ -18,6 +18,7 @@ swap f x y = f y x
 export
 (<<=) : (Monad m) => (a -> m b) -> (m a) -> m b
 (<<=) = swap (>>=)
+
 
 public export
 data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
@@ -180,19 +181,6 @@ public export
 indent : Nat -> String
 indent n = StrExtra.replicate (2 * n) ' '
 
-public export
-sepBy : List String -> String -> String
-sepBy [] _ = ""
-sepBy (x :: []) _ = x
-sepBy (x :: xs) sep = x ++ sep ++ sepBy xs sep
-
-
-public export
-sepBy' : Vect n String -> String -> String
-sepBy' [] _ = ""
-sepBy' (x :: []) _ = x
-sepBy' (x :: xs) sep = x ++ sep ++ sepBy' xs sep
-
 
 public export
 escapeString : String -> String
@@ -213,3 +201,69 @@ export
 lift : Maybe (Core a) -> Core (Maybe a)
 lift Nothing = pure Nothing
 lift (Just x) = x >>= pure . Just
+
+public export
+record StrBuffer where
+   constructor MkStrBuffer
+   get : Buffer
+   offset : Int
+
+export 
+allocStrBuffer : Int -> Core StrBuffer
+allocStrBuffer initialSize = 
+   do
+      (Just buf) <- coreLift $ newBuffer initialSize
+         | _ => throw (UserError "Could not allocate buffer")
+      pure (MkStrBuffer buf 0)
+
+export
+writeStr : 
+      (marker : Type)
+   -> {auto buf : Ref marker StrBuffer}
+   -> String
+   -> Core ()
+writeStr marker str = 
+   do
+      let strlen = stringByteLength str
+      strbuf <- get marker
+      raw <- ensureSize strbuf.get strbuf.offset strlen
+      coreLift $ setString raw strbuf.offset str
+      put marker (MkStrBuffer raw (strbuf.offset + strlen))
+      pure ()
+
+   where
+      ensureSize : Buffer -> Int -> Int -> Core Buffer
+      ensureSize buf offset strlen = 
+         let bufLen = !(coreLift $ rawSize buf) in
+             if offset + strlen > bufLen
+                then do
+                   (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
+                     | _ => throw (UserError "Could not allocate buffer")
+                   pure buf  
+             else      
+                pure buf
+
+public export
+data DeferedStr : Type where
+   Nil : DeferedStr
+   (::) : Lazy a -> {auto prf : Either (a = String) (a = DeferedStr)} -> DeferedStr -> DeferedStr
+
+export
+pure : String -> DeferedStr
+pure x = [delay x]
+
+export
+traverse_ : (String -> Core b) -> DeferedStr -> Core ()
+traverse_ f ((::) x xs {prf = Left Refl}) = do f x; traverse_ f xs
+traverse_ f ((::) x xs {prf = Right Refl}) = do traverse_ f x; traverse_ f xs
+traverse_ _ [] = pure ()
+
+
+export
+sepBy : List (DeferedStr) -> String -> DeferedStr
+sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
+sepBy (x :: []) _ = [x]
+sepBy [] _ = []
+
+
+

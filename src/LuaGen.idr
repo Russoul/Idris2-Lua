@@ -13,6 +13,7 @@ import Data.List
 import Data.Buffer
 import System.File
 import System
+import System.Clock
 import Data.Bool.Extra
 import Data.Strings
 import Data.String.Extra as StrExtra
@@ -21,6 +22,11 @@ import Utils.Path
 import Utils.Hex
 import public LuaCommon
 import public LuaAst
+
+
+data NameGen : Type where
+data Preamble : Type where
+data LuaCode : Type where
 
 
 data WithDefault : (0 a : Type) -> Maybe a -> Type where
@@ -47,6 +53,7 @@ record COpts where
    dynamicSupportLib    : WithDefault Bool (Just True)   --DynSupport
    luaVersion           : WithDefault LuaVersion Nothing --LuaVersion
    noRequire            : WithDefault Bool (Just False)  --NoRequire
+   debugOutput          : WithDefault Bool (Just False)  --DebugOutput
                     --omit 'require' statements in the header of the support script
                     --useful when you want to run idris in environment where not all libraries
                     --are supported or dynamic library loading is turned off
@@ -55,6 +62,27 @@ record COpts where
 --TODO local const table with integer indices of function values for faster calls
 --TODO use <const> when targeting lua 5.4 ? (should enable declaration of 200+ local functions which is
 --impossible for mutable local varibles (due to lua's own limitation)
+
+
+
+export
+logLine : 
+     {auto opts : COpts}
+   -> String
+   -> Core ()
+logLine str with (opts.debugOutput.get)
+   logLine str | True = coreLift $ putStrLn ("[Debug]" ++ str)
+   logLine str | False = pure ()
+
+export 
+toMillis : Clock type -> Integer
+toMillis (MkClock sec nan) = 
+   let scale = 1000 in
+       scale * sec + (nan `div` 1000000)
+
+export
+showMillis : Integer -> String
+showMillis n = show n ++ " ms"
 
 %hide Core.TT.Visibility
 
@@ -78,7 +106,7 @@ getArgsName = UN "idris__getArgs"
 
 
 stringifyName : Name -> String
-stringifyName (NS ns n) = sepBy (validateIdentifier <$> reverse ns) "_" ++ "_" ++ stringifyName n
+stringifyName (NS ns n) = join "_" (validateIdentifier <$> reverse ns) ++ "_" ++ stringifyName n
 stringifyName (UN x) = validateIdentifier x
 stringifyName (MN x y) = "__" ++ (validateIdentifier x) ++ show y
 stringifyName (PV n d) = "pat__" ++ stringifyName n ++ "_" ++ show d
@@ -98,22 +126,32 @@ indent : Nat -> String
 indent n = ""
 
 mutual
-  stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> String
-  stringifyBinOp n op x y = fastAppend [stringify n x
-                                       , " ", op
-                                       , "\n"
-                                       , stringify (S n) y] 
+  stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr 
+  stringifyBinOp n op x y = [stringify n x
+                            , " "
+                            , op
+                            , "\n"
+                            ,stringify (S n) y] 
   
-  stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> String
-  stringifyMethodApp n method x y = fastAppend [stringify n x
-                                               , ":", method
-                                               , "(\n" 
-                                               ,stringify (S n) y, ")"]
-  stringifyFnApp : Nat -> (fn : String) -> Vect n LuaExpr -> String
+  stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
+  stringifyMethodApp n method x y = [stringify n x
+                                    , ":", method
+                                    , "(\n" 
+                                    ,stringify (S n) y
+                                    , ")"]
+
+  stringifyFnApp : 
+     Nat 
+   -> (fn : String) 
+   -> Vect n LuaExpr 
+   -> DeferedStr
   stringifyFnApp n fn args = 
-    indent n ++ fn ++ "(\n" 
-                  ++ sepBy' (stringify (S n) <$> args) ",\n" 
-                  ++ "\n" ++ indent n ++ ")"
+    [indent n 
+    , fn 
+    , "(\n" 
+    ,sepBy (stringify (S n) <$> args.toList) ",\n" 
+    , "\n" 
+    , indent n , ")"]
   
   --TODO add compiler option to throw when it encounters unsupported ops
   opNotSupportedErr : {auto copts : COpts} -> String -> String
@@ -124,7 +162,7 @@ mutual
      -> PrimFn n 
      -> Vect n LuaExpr
      -> LuaVersion
-     -> String
+     -> DeferedStr
   stringifyBitOp n (ShiftL IntType) [x, y] ver with (ver >= Lua53) 
      stringifyBitOp n (ShiftL IntType) [x, y] ver | True = stringifyBinOp n "<<" x y
      stringifyBitOp n (ShiftL IntType) [x, y] ver | False = stringifyFnApp n "bit32.lshift" [x, y]
@@ -142,67 +180,118 @@ mutual
      stringifyBitOp n (BXOr IntType) [x, y] ver | False = stringifyFnApp n "bit32.bxor" [x, y]
   stringifyBitOp n (ShiftL IntegerType) [x, y] ver = stringifyMethodApp n "shiftleft" x y 
   stringifyBitOp n (ShiftR IntegerType) [x, y] ver = stringifyMethodApp n "shiftright" x y 
-  stringifyBitOp n op _ _ = opNotSupportedErr (show op)
+  stringifyBitOp n op _ _ = [opNotSupportedErr (show op)]
   
   stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
-  stringifyString str = "utf8.char(" ++ sepBy (show . ord <$> unpack str) ", " ++ ") --[[ " ++ escapeString(str) ++ "--]]"
+  stringifyString str = "utf8.char(" ++ join ", " (show . ord <$> unpack str) ++ ") --[[ " ++ escapeString(str) ++ "--]]"
 
-  --TODO this is slow, use mutable preallocated buffers
   stringify :
-        {auto copts : COpts}
+        --{auto buf : Ref LuaCode StrBuffer}
+      {auto copts : COpts}
      -> (n : Nat) 
      -> LuaExpr 
-     -> String
+     -> DeferedStr 
   stringify n (LVar name) = 
-    indent n ++ stringifyName name
-  stringify n (LDeclVar v name) = fastAppend 
+    [indent n, stringifyName name]
+  stringify n (LDeclVar v name) = 
     [ indent n, stringifyVisibility v, (if v == Global then "" else " "),  stringifyName name ]  
-  stringify n (LLambda args body) = fastAppend
-    [ indent n , "function(" , sepBy (stringifyName <$> args) ", " , ")\n"
-    , stringify (S n) body , "\n"
-    , indent n , "end" ]
-  stringify n (LApp (LVar name) xs) = fastAppend
-    [ stringify n (LVar name) , "(\n"
-    , indent n , sepBy (stringify (S n) <$> xs) ",\n" , "\n" , indent n , ")" ]
-  stringify n (LApp f xs) = fastAppend
-    [ indent n , "(\n" , stringify (S n) f , ")(\n" 
-    , indent n , sepBy (stringify (S n) <$> xs) ",\n" , "\n" , indent n , ")"]  
-  stringify n LNil = indent n ++ "nil"
-  stringify n LFalse = indent n ++ "false"
-  stringify n LTrue = indent n ++ "true"
-  stringify n (LNumber num) = indent n ++ num
-  stringify n (LBigInt num) = fastAppend [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
-  stringify n (LString s) = fastAppend [ indent n , stringifyString s ]
-  stringify n (LTable kvs) = fastAppend
+  stringify n (LLambda args body) =
+    [ indent n 
+    , "function(" 
+    , sepBy (pure . stringifyName <$> args) ", " 
+    , ")\n"
+    , (stringify (S n) body) , "\n"
+    , indent n 
+    , "end" ]
+  stringify n (LApp (LVar name) xs) =
+    [ (stringify n (LVar name)) 
+    , "(\n"
+    , indent n 
+    , sepBy (stringify (S n) <$> xs) ",\n" 
+    , "\n" 
+    , indent n 
+    , ")" ]
+  stringify n (LApp f xs) = 
+    [ indent n , "(\n" 
+    , stringify (S n) f 
+    , ")(\n" 
+    , indent n 
+    , sepBy (stringify (S n) <$> xs) ",\n" 
+    , "\n" , indent n , ")"]  
+  stringify n LNil = [indent n, "nil"]
+  stringify n LFalse = [indent n, "false"]
+  stringify n LTrue = [indent n, "true"]
+  stringify n (LNumber num) = [indent n, num]
+  stringify n (LBigInt num) = [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
+  stringify n (LString s) = [ indent n , stringifyString s ]
+  stringify n (LTable kvs) =
     [ indent n , "{\n" 
-    , sepBy ((\(k, v) => fastAppend [indent (S n) , stringifyName k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" , "\n" , indent n , "}" ]
-  stringify n (LIndex (LVar name) i) = fastAppend
-    [ indent n, stringifyName name , "\n[\n" , stringify (S n) i , "\n" , indent n , "]" ]
-  stringify n (LIndex e i) = fastAppend
-    [ indent n , "(\n" , stringify (S n) e 
-    , ")\n" , indent n , "[\n" , stringify (S n) i , "\n" , indent n , "]" ]
-  stringify n (LSeq x y) = fastAppend [ stringify n x , "\n" , stringify n y ]
-  stringify n (LFnDecl v name args body) = fastAppend
-    [ indent n , stringifyVisibility v
-    , (if v == Local then " " else "") , "function " , stringifyName name , "(" , sepBy (stringifyName <$> args) ", " , ")\n" 
+    , sepBy ((\(k, v) => [indent (S n) , stringifyName k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
+    , "\n" 
+    , indent n 
+    , "}" ]
+  stringify n (LIndex (LVar name) i) =
+    [ indent n
+    , stringifyName name 
+    , "\n[\n" , stringify (S n) i 
+    , "\n" 
+    , indent n 
+    , "]" ]
+  stringify n (LIndex e i) =
+    [ indent n 
+    , "(\n" ,stringify (S n) e 
+    , ")\n" 
+    , indent n 
+    , "[\n" 
+    , stringify (S n) i 
+    , "\n" 
+    , indent n 
+    , "]" ]
+  stringify n (LSeq x y) = [ stringify n x , "\n" , stringify n y ]
+  stringify n (LFnDecl v name args body) =
+    [ indent n 
+    , stringifyVisibility v
+    , (if v == Local then " " else "") 
+    , "function " , stringifyName name 
+    , "(" , sepBy (pure . stringifyName <$> args) ", " , ")\n" 
     , stringify (S n) body , "\n" , indent n , "end" ]
-  stringify n (LReturn x) = fastAppend [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
-  stringify n (LAssign (Just vis) x y) = fastAppend 
-    [ indent n , stringifyVisibility vis , "\n" , stringify n x 
-    , " =\n" , stringify (n + 2) y
+  stringify n (LReturn x) = [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
+  stringify n (LAssign (Just vis) x y) = 
+    [ indent n 
+    , stringifyVisibility vis 
+    , "\n" 
+    , stringify n x 
+    , " =\n" 
+    , stringify (n + 2) y
     ]  
-  stringify n (LAssign Nothing x y) = fastAppend
+  stringify n (LAssign Nothing x y) =
     [ stringify n x , " =\n" , stringify (S n) y ] 
-  stringify n (LIfThenElse cond x y) = fastAppend
-    [ indent n , "if\n" , stringify (S n) cond , "\n" , indent n , "then\n" 
+  stringify n (LIfThenElse cond x y) =
+    [ indent n , "if\n" 
+    , stringify (S n) cond 
+    , "\n" 
+    , indent n 
+    , "then\n" 
     , stringify (S n) x , "\n"
-    , indent n , "else\n"
-    , stringify (S n) y , "\n" , indent n , "end" ]
-  stringify n LBreak = indent n ++ "break"
-  stringify n (LWhile cond body) = fastAppend
-    [ indent n , "while\n" , stringify (S n) cond , "\n" , indent n , "do\n"
-    , stringify (S n) body , "\n" , indent n , "end" ]
-  stringify n LDoNothing = ""
+    , indent n 
+    , "else\n"
+    , stringify (S n) y 
+    , "\n" 
+    , indent n 
+    , "end" ]
+  stringify n LBreak = [indent n, "break"]
+  stringify n (LWhile cond body) =
+    [ indent n 
+    , "while\n" 
+    , stringify (S n) cond 
+    , "\n" 
+    , indent n 
+    , "do\n"
+    , stringify (S n) body 
+    , "\n" 
+    , indent n 
+    , "end" ]
+  stringify n LDoNothing = [""]
   stringify n (LPrimFn (Add ty) [x, y]) = stringifyBinOp n "+" x y
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
@@ -214,7 +303,7 @@ mutual
   stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Div DoubleType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Mod ty) [x ,y]) = stringifyBinOp n "%" x y
-  stringify n (LPrimFn (Neg ty) [x]) = indent n ++ "- (" ++ stringify Z x ++ ")"
+  stringify n (LPrimFn (Neg ty) [x]) = [indent n, "- (", stringify Z x, ")"]
   stringify n (LPrimFn op@(ShiftL _) args) = stringifyBitOp n op args copts.luaVersion.get
   stringify n (LPrimFn op@(ShiftR _) args) = stringifyBitOp n op args copts.luaVersion.get
   stringify n (LPrimFn op@(BAnd _) args)   = stringifyBitOp n op args copts.luaVersion.get
@@ -225,22 +314,22 @@ mutual
   stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y        
   stringify n (LPrimFn (GTE ty) [x, y]) = stringifyBinOp (S n) ">=" x y      
   stringify n (LPrimFn (GT ty) [x, y]) = stringifyBinOp (S n) ">" x y        
-  stringify n (LPrimFn StrLength [x]) = fastAppend [ indent n , "utf8.len(\n" , stringify (S n) x , ")" ]
-  stringify n (LPrimFn StrHead [x]) = fastAppend [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 1, 1)" ]
-  stringify n (LPrimFn StrTail [x]) = fastAppend [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 2)" ]
-  stringify n (LPrimFn StrIndex [str, i]) = fastAppend
+  stringify n (LPrimFn StrLength [x]) = [ indent n , "utf8.len(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn StrHead [x]) = [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 1, 1)" ]
+  stringify n (LPrimFn StrTail [x]) = [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 2)" ]
+  stringify n (LPrimFn StrIndex [str, i]) =
       let strI = stringify (S n) i in
          [ indent n , "utf8.sub(\n" , stringify (S n) str 
          , ",\n" , strI , ",\n" 
          , strI , ")" ] 
-  stringify n (LPrimFn StrCons [x, xs]) = fastAppend
+  stringify n (LPrimFn StrCons [x, xs]) =
     [ indent n , "(\n" , stringify (S n) x , ") .. (\n" 
     , stringify (S n) xs , ")" ]
-  stringify n (LPrimFn StrAppend [x, xs]) = fastAppend
+  stringify n (LPrimFn StrAppend [x, xs]) =
     [ indent n , "(\n" , stringify (S n) x , ") .. (\n" 
     , stringify (S n) xs , ")" ]
-  stringify n (LPrimFn StrReverse [x]) = fastAppend [ indent n , "(\n" , stringify (S n) x , "):reverse()" ]
-  stringify n (LPrimFn StrSubstr [offset, len, str]) = fastAppend
+  stringify n (LPrimFn StrReverse [x]) = [ indent n , "(\n" , stringify (S n) x , "):reverse()" ]
+  stringify n (LPrimFn StrSubstr [offset, len, str]) =
      let strOff = stringify (S n) offset in
         [ indent n , "utf8.sub(\n" , stringify (S n) str 
         , ",\n" , strOff 
@@ -264,13 +353,13 @@ mutual
   stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast IntType CharType) [x]) = fastAppend $ [ indent n , "utf8.char(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn (Cast IntType CharType) [x]) = [ indent n , "utf8.char(\n" , stringify (S n) x , ")" ]
   stringify n (LPrimFn (Cast IntType DoubleType) [x]) = stringify n x
   stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = fastAppend [ indent n , "bigint:new(utf8.byte(\n" , stringify (S n) x , "))" ]
-  stringify n (LPrimFn (Cast CharType IntType) [x]) = fastAppend [ indent n , "utf8.byte(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = [ indent n , "bigint:new(utf8.byte(\n" , stringify (S n) x , "))" ]
+  stringify n (LPrimFn (Cast CharType IntType) [x]) = [ indent n , "utf8.byte(\n" , stringify (S n) x , ")" ]
 
 
   stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
@@ -279,14 +368,13 @@ mutual
 
 
   stringify n (LPrimFn (Cast DoubleType IntType) [x]) = stringifyFnApp n "math.floor" [x]
-  stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) = fastAppend
+  stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) =
     [ indent n , "bigint:new(math.floor(\n" , stringify (S n) x , "))" ]
   
 
   stringify n (LPrimFn (Cast ty StringType) [x]) = stringifyFnApp n "tostring" [x]
-  stringify n (LPrimFn (Cast from to) [x]) = fastAppend 
-    [ stringify n $ mkErrorAst $ "invalid cast: from "
-    , show from , " to " , show to ]
+  stringify n (LPrimFn (Cast from to) [x]) = 
+    [ stringify n $ mkErrorAst $ "invalid cast: from " ++ show from ++ " to " ++ show to ]
   stringify n (LPrimFn BelieveMe [_, _, x]) = stringify n x
   stringify n (LPrimFn Crash [_, msg]) = stringify n $ mkErrorAst' msg 
   stringify n (LPrimFn op args) = stringify n $ mkErrorAst $ "unsupported primitive function: " ++ show op
@@ -325,11 +413,6 @@ replaceNames names (LIfThenElse cond tr fa) =
 replaceNames names LBreak = LBreak
 replaceNames names (LWhile cond body) = LWhile (replaceNames names cond) (replaceNames names body)
 replaceNames names LDoNothing = LDoNothing
-
-
-data NameGen : Type where
-data Preamble : Type where
-
 
 
 
@@ -656,6 +739,11 @@ mutual
     do
       args <- traverse processExpr args
       let (blockA, args) = unzip args
+      -- let args = (\(arg, i) => LApp (LVar ifThenElseName) --nil check before any table construction TODO this is for debug only
+      --                [LPrimFn (EQ IntType) [arg, LNil]
+      --                , LLambda [] $ mkErrorAst ("arg" ++ show i ++ " is nil")
+      --                , LLambda [] $ LReturn $ arg]) 
+      --                <$> zip args [1..args.length]
       let conArgs = zipWith (\i, arg => (UN $ "arg" ++ (show i), arg)) [1..args.length] args
       let mbName = if opts.storeConstructorName.get then [(UN "name", LString $ show n), (UN "numArgs", LNumber $ show args.length)] else []
       pure (concat blockA, LTable ([(UN "tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
@@ -751,9 +839,9 @@ mutual
         -> (Name, FC, NamedDef) 
         -> Core LuaExpr {-block of code-}
   processDef (n, _, MkNmFun args expr) =
-   if (find (== n) extNames) .isJust || (find (== show n) primFnNames) .isJust
+   if (find (== n) extNames) .isJust -- || (find (== show n) primFnNames) .isJust
       then
-         pure LDoNothing --do not gen names for prim fns, ext fns and foreign fns, done separately
+         pure LDoNothing --do not gen names for ext fns and foreign fns, done separately
       else do   
          --coreLift $ putStrLn $ "def: " ++ stringifyName n
          (blockA, expr) <- processExpr expr
@@ -782,32 +870,39 @@ getCOpts =
                                    pure (parseLuaVersion <<= str)
          | _ => throw (UserError "Could not parse Lua version from $LuaVersion, format: X.X[.X]")
       opt4 <- coreLift $ getEnv "NoRequire"
+      opt5 <- coreLift $ getEnv "DebugOutput"
       pure $ MkCOptsInfo 
                (thisOrDefault (opt1 >>= parseEnvBool)) 
                (thisOrDefault (opt2 >>= parseEnvBool)) 
                (MkWithDefault opt3 _) 
                (thisOrDefault (opt4 >>= parseEnvBool))
+               (thisOrDefault (opt5 >>= parseEnvBool))
 
 
-translate : Ref Ctxt Defs -> ClosedTerm -> Core String
+translate : Ref Ctxt Defs -> ClosedTerm -> Core StrBuffer
 translate defs term = do
-  coreLift $ putStrLn "Lua compilation started [0/5]"
   opts <- getCOpts
-  coreLift $ putStrLn ("Using " ++ show opts.luaVersion.get)
+  clock0 <- coreLift $ clockTime Monotonic
+  logLine "Lua compilation started [0/5]"
+  logLine ("Using " ++ show opts.luaVersion.get)
   cdata <- getCompileData Cases term
-  coreLift $ putStrLn "Got compile data [1/5]"
+  clock1 <- coreLift $ clockTime Monotonic
+  logLine $ "Got compile data [1/5] in " ++ showMillis (toMillis $ timeDifference clock1 clock0)
   let ndefs = cdata.namedDefs
   let ctm = forget cdata.mainExpr
-  coreLift $ putStrLn "Looked up direct names [2/5]"
+  clock2 <- coreLift $ clockTime Monotonic
+  logLine $ "Looked up direct names [2/5] in " ++ showMillis (toMillis $ timeDifference clock2 clock1)
   --let used = defsUsedByNamedCExp ctm ndefs 
   s <- newRef NameGen (MkNameGenSt 0)
   pr <- newRef Preamble (MkPreambleSt empty)
   cdefs <- traverse processDef ndefs.reverse
-  coreLift $ putStrLn "Compiled definitions [3/5]"
+  clock3 <- coreLift $ clockTime Monotonic
+  logLine $ "Compiled definitions [3/5] in " ++ showMillis (toMillis $ timeDifference clock3 clock2)
   let con_cdefs = concat cdefs
   --TODO tail call optimization
   (block, main) <- processExpr ctm
-  coreLift $ putStrLn "Compiled main [4/5]"
+  clock4 <- coreLift $ clockTime Monotonic
+  logLine $ "Compiled main [4/5] in " ++ showMillis (toMillis $ timeDifference clock4 clock3)
   preamble <- getPreamble
 
   support <- if opts.dynamicSupportLib.get
@@ -817,44 +912,51 @@ translate defs term = do
                      readDataFile $ "lua" </> "idris2_lua.lua"
 
 
-  let string = fastAppend
+  let stringPlan : DeferedStr =
              [ " --------- SUPPORT DEFS ---------\n" 
              , "idris__luaVersion = " ++ show (index opts.luaVersion.get) ++ "\n" --sets target Lua version to be used in support
              , "idris__noRequire  = " ++ (toLower . show) opts.noRequire.get ++ "\n"
              , support , "\n" 
              , stringify Z (concat builtinSupportDefs) 
              , "\n---------- PREAMBLE DEFS ----------\n"
-             , sepBy preamble.values "\n" , "\n\n"
+             , join "\n" preamble.values , "\n\n"
              , "\n---------- CTX DEFS ----------\n"
              , stringify Z con_cdefs
              , "\n--------- RETURN ---------\n" 
              , stringify Z block
-             , stringify Z main ]
-  coreLift $ putStrLn "Stringified lua [5/5]"
-  pure string
-
+             , stringify Z main]
+  let mbyte = 1024 * 1024           
+  strbuf <- newRef LuaCode !(allocStrBuffer mbyte)
+  traverse_ (writeStr LuaCode) stringPlan
+  clock5 <- coreLift $ clockTime Monotonic
+  logLine $ "Stringified lua [5/5] in " ++ showMillis (toMillis $ timeDifference clock5 clock4)
+  logLine $ "All done in " ++ showMillis (toMillis $ timeDifference clock5 clock0)
+  strbuf <- get LuaCode
+  pure strbuf
 
 compile : Ref Ctxt Defs -> (tmpDir : String) -> (outputDir : String) ->
         ClosedTerm -> (outfile : String) -> Core (Maybe String)
 compile defs tmpDir outputDir term file = do 
    
-  res <- translate defs term
-
-  (Right ()) <- coreLift $ writeFile (outputDir </> file) res
-    | Left err => throw $ FileErr (outputDir </> file) err
+  strbuf <- translate defs term
+  Right () <- coreLift $ writeBufferToFile (outputDir </> file) strbuf.get strbuf.offset
+    | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (outputDir </> file) err
+  coreLift $ freeBuffer strbuf.get
     
   pure $ Just (outputDir </> file)
 
 execute : Ref Ctxt Defs -> (tmpDir : String) -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
-  res <- translate defs term
+  strbuf <- translate defs term
   let file = "generated.lua"
   lua <- coreLift $
     do
       mbDefined <- getEnv "LuaExe" 
       pure $ mbDefined `orElse` "lua"
-  (Right ())  <- coreLift $ writeFile (tmpDir </> file) res
-     | Left err => throw $ FileErr (tmpDir </> file) err
+  
+  Right () <- coreLift $ writeBufferToFile (tmpDir </> file) strbuf.get strbuf.offset
+    | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (tmpDir </> file) err
+  coreLift $ freeBuffer strbuf.get
   _ <- coreLift $ system $ "'" ++ lua ++ "' " ++ "\"" ++ escapeString (tmpDir </> file) ++ "\""
   pure ()
 
