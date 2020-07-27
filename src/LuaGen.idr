@@ -256,7 +256,7 @@ mutual
   stringify n (LComment s) = [ indent n, "--[[ ",  s, " --]]"]
   stringify n (LTable kvs) =
     [ indent n , "{\n" 
-    , sepBy ((\(k, v) => [indent (S n) ,k , " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
+    , sepBy ((\(k, v) => [indent (S n) , "[", stringify Z k, "]", " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
     , "\n" 
     , indent n 
     , "}" ]
@@ -437,7 +437,7 @@ mutual
 -- replaceNames names (LIndex expr key) = LIndex (replaceNames names expr) (replaceNames names key)
 -- replaceNames names (LTable ys) = 
 --   LTable (map (\(key, val) => (
---                    key,
+--                    replaceNames names key,
 --                    replaceNames names val)) ys)
 -- replaceNames names (LSeq x y) = LSeq (replaceNames names x) (replaceNames names y)
 -- replaceNames names (LFnDecl vis name args body) = LFnDecl vis name args (replaceNames names body)
@@ -468,7 +468,7 @@ genName =
     s <- get NameGen
     let i = nextName s
     put NameGen (record{nextName $= (+1)} s)
-    pure $ MN "__gen__" i
+    pure $ MN "gen" i
 
 getPreamble :
            {auto p : Ref Preamble PreambleSt}
@@ -590,7 +590,7 @@ mutual
   processExtCall (NS ["IORef", "Data"] (UN "prim__newIORef")) [_, v, _] =
     do
       (blockA, v) <- processExpr v
-      pure (blockA, LTable [("val", v)])
+      pure (blockA, LTable [(LString "val", v)])
   processExtCall (NS ["IORef", "Data"] (UN "prim__readIORef")) [_, r, _] =
     do
       (blockA, r) <- processExpr r
@@ -599,7 +599,7 @@ mutual
     do
       (blockA, r) <- processExpr r
       (blockB, v) <- processExpr v
-      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [("tag", LString "0")] {-Unit-})
+      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [(LString "tag", LString "0")] {-Unit-})
   processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) [_, len, init, _] = 
     do
       (blockA, len) <- processExpr len
@@ -624,7 +624,7 @@ mutual
       (blockA, ar) <- processExpr ar
       (blockB, i) <- processExpr i
       (blockC, v) <- processExpr v
-      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [("tag", LString "0")] {-Unit-}) 
+      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [(LString "tag", LString "0")] {-Unit-}) 
   processExtCall name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = 
     do
       args' <- traverse processExpr args
@@ -716,7 +716,13 @@ mutual
                 [(justReturn $ LPrimFn op args, justReturn (LNumber "1"))]
                 (Just $ justReturn (LNumber "0"))
       pure (concat blockA <+> blockB, cas)          
-                
+  
+  constCaseIndex : NamedConstAlt -> LuaExpr -> Core LuaExpr
+  constCaseIndex (MkNConstAlt const _) index = 
+     case constantTy const of
+          (Just IntegerType) => pure $ LPrimFn (Cast IntegerType StringType) [index]
+          (Just other) => pure index 
+          Nothing => throw $ UserError ("Cannot match on " ++ show const)
 
   processExpr : {auto c : Ref NameGen NameGenSt} 
          -> {auto opts : COpts}
@@ -758,19 +764,38 @@ mutual
   processExpr (NmConCase _ sc alts def) =
     do
       (blockA, sc) <- processExpr sc
-      let conVar = !genName
-      alts <- traverse (\alt => processConsAlt (LLVar conVar) alt) alts 
+      conVar <- genName
+      alts <- traverse (processConsAlt (LLVar conVar)) alts
+      let table = LTable alts
+      tableVar <- genName
       mdef <- lift $ processExpr <$> def
-      (blockB, cas) <- mkCase alts mdef
-      pure (blockA <+> LAssign (Just Local) (LLVar conVar) sc <+> blockB, cas)   
-  processExpr (NmConstCase _ sc alts def) = 
+      let indexed = LIndex (LLVar tableVar) (LIndex (LLVar conVar) (LString "tag"))
+      indexedVar <- genName
+      (blockB, cas) <- mkCase [(justReturn (LLVar indexedVar), justReturn (LApp (LLVar indexedVar) []))] mdef
+      pure (blockA 
+           <+> LAssign (Just Local) (LLVar conVar) sc 
+           <+> LAssign (Just Local) (LLVar tableVar) table
+           <+> LAssign (Just Local) (LLVar indexedVar) indexed
+           <+> blockB, cas)   
+  processExpr (NmConstCase _ sc rawalts def) = 
     do
       (blockA, sc) <- processExpr sc
       let constVar = !genName
-      alts <- traverse (\alt => processConstAlt (LLVar constVar) alt) alts
+      alts <- traverse processConstAlt rawalts
+      let table = LTable alts
+      tableVar <- genName
       mdef <- lift $ processExpr <$> def
-      (blockB, cas) <- mkCase alts mdef
-      pure (blockA <+> LAssign (Just Local) (LLVar constVar) sc <+> blockB, cas)
+      index <- 
+          (\alt => constCaseIndex alt (LLVar constVar)) 
+          <$> head' rawalts `orElse` pure LNil --orElse is in case there is only default branch of case clause
+      let indexed = LIndex (LLVar tableVar) index
+      indexedVar <- genName
+      (blockB, cas) <- mkCase [(justReturn (LLVar indexedVar), justReturn (LApp (LLVar indexedVar) []))] mdef
+      pure (blockA 
+           <+> LAssign (Just Local) (LLVar constVar) sc 
+           <+> LAssign (Just Local) (LLVar tableVar) table 
+           <+> LAssign (Just Local) (LLVar indexedVar) indexed 
+           <+> blockB, cas)
   processExpr (NmExtPrim _ p args) = do
      processExtCall p args
   processExpr (NmCon _ n mbtag args) =
@@ -782,9 +807,9 @@ mutual
       --                , LLambda [] $ mkErrorAst ("arg" ++ show i ++ " is nil")
       --                , LLambda [] $ LReturn $ arg]) 
       --                <$> zip args [1..args.length]
-      let conArgs = zipWith (\i, arg => ("arg" ++ (show i), arg)) [1..args.length] args
-      let mbName = if opts.storeConstructorName.get then [("name", LString $ stringifyName Global n), ("num", LNumber $ show args.length)] else []
-      pure (concat blockA, LTable ([("tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
+      let conArgs = zipWith (\i, arg => (LString $ "arg" ++ (show i), arg)) [1..args.length] args
+      let mbName = if opts.storeConstructorName.get then [(LString "name", LString $ stringifyName Global n), (LString "num", LNumber $ show args.length)] else []
+      pure (concat blockA, LTable ([(LString "tag", LString (processTag n mbtag))] ++ conArgs ++ mbName))
   processExpr (NmDelay _ t) =
     do
       (blockA, t) <- processExpr t
@@ -833,30 +858,29 @@ mutual
              -> {auto opts : COpts}
              -> (cons : LuaExpr)
              -> (alt : NamedConAlt) 
-             -> Core (LuaBlock {-condition-}, LuaBlock {-arm-})
+             -> Core (LuaExpr {-tag-}, LuaExpr {-arm-})
   processConsAlt cons (MkNConAlt name mbtag args res') = 
     do
       (blockA, res) <- processExpr res'
       -- let bindings = zipWith (\i, n => (n, LIndex cons (indexConstructorArg i))) [1..args.length] args
       let bindings = zipWith (\i, n => if used n res' then LAssign (Just Local) (LLVar n) $ LIndex cons (indexConstructorArg i) else LDoNothing) [1..args.length] args
-      let cond = LPrimFn (EQ StringType) [LIndex cons (LString "tag"), LString (processTag name mbtag)]
-      pure (justReturn cond, (concat bindings <+> blockA {-blockA uses those bindings-}, res))
+      -- let cond = LPrimFn (EQ StringType) [LIndex cons (LString "tag"), LString (processTag name mbtag)]
+      pure (LString $ processTag name mbtag, LLambda [] $ concat bindings <+> blockA {-blockA uses those bindings-} <+> LReturn res)
 
 
   processConstAlt : {auto c : Ref NameGen NameGenSt}
                 -> {auto opts : COpts}
-                -> (cons : LuaExpr)
+                -- -> (cons : LuaExpr)
                 -> (alt : NamedConstAlt)
-                -> Core (LuaBlock {-condition-}, LuaBlock {-arm-})
-  processConstAlt cons (MkNConstAlt c res) =
+                -> Core (LuaExpr {-const-}, LuaExpr{-arm-})
+  processConstAlt alt@(MkNConstAlt c res) =
     do
-      let (Just constTy) = constantTy c
-        | Nothing => throw $ InternalError ("cannot match on " ++ (show c))
-
-
+      const <- processConstant c
       (blockA, res) <- processExpr res
-      let cond = LPrimFn (EQ constTy) [cons, !(processConstant c)] 
-      pure (justReturn cond, (blockA, res))
+      key <- constCaseIndex alt const
+      
+      -- let cond = LPrimFn (EQ constTy) [cons, !(processConstant c)] 
+      pure (key, LLambda [] $ blockA <+> LReturn res)
 
 
   indexConstructorArg : Nat -> LuaExpr

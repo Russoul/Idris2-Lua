@@ -119,7 +119,7 @@ main = do
   putStrLn $ show $ (the Integer 0) > 0
   putStrLn $ show $ testInteger 2 5
   putStrLn $ "2 ^ 6 == " ++ show (intPow 2 6)
-  let  tr = fillIn 4 [] (\d, i => (cast d) ++ " " ++ (cast i))
+  let  tr = fillIn 7 [] (\d, i => (cast d) ++ " " ++ (cast i))
   putStrLn $ printLeft tr
   
   putStrLn $ "the guts of BTree look like this: " ++ inspect tr

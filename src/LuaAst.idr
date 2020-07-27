@@ -31,7 +31,7 @@ data LuaExpr = LLVar Name
               | LNumber String
               | LBigInt String
               | LString String
-              | LTable (List (String, LuaExpr))
+              | LTable (List (LuaExpr, LuaExpr))
               | LIndex LuaExpr LuaExpr
               | LSeq LuaExpr LuaExpr
               | LFnDecl Name (List Name) LuaExpr --global function decl
