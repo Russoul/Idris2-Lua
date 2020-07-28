@@ -12,6 +12,8 @@ if not idris.noRequire then
 	vstruct = require("vstruct")
 end
 
+idris.error = error
+
 
 -------------------------------------
 ---- Cross-Version Compatibility ----      --possible Lua version range is [5.1; 5.4]
@@ -73,9 +75,18 @@ function idris.getReadLineString()
   end	  
 end 
 
+function idris.getUnpack()
+  if idris.luaVersion == 51 then
+	  return unpack
+  else
+	  return table.unpack
+  end	  
+end 
+
 bit32 = idris.getBit32()
 idris.tointeger = idris.getToInteger()
 idris.readl = idris.getReadLineString()
+idris.unpack = idris.getUnpack()
 
 function idris.signum(x)
   if x > 0 then
@@ -93,6 +104,154 @@ function idris.div(x, m)
    return (x - sx * (x * sx % abs(m))) / m
 end
 local div = idris.div
+local min = math.min
+local max = math.max
+
+-- function idris.powbi(base, exp)
+--    local zero = bigint:new(0)
+-- 	local one = bigint:one(1)
+-- 	local k = one
+-- 	while exp >= one do
+-- 		k = k * base
+-- 		exp = exp - one
+-- 	end
+-- 	return k
+-- end	
+
+function bigint.abs(x)
+	if x >= bigint:new(0) then
+		return bigint:new(x)
+	else
+		return -x
+	end	
+end
+
+function bigint.numd2(x)
+	local n = 0
+	local x = x:abs()
+	while x > 0 do
+		n = n + 1
+		x = x:shiftright(1)
+	end	
+	return n
+end	
+
+function idris.bandbi(a, b)
+	local a = bigint:new(a)
+	local b = bigint:new(b)
+   local zero = bigint:new(0)
+	local one = bigint:new(1)
+	local two = bigint:new(2)
+	local ca = a:numd2()
+	local cb = b:numd2()
+	local cmax = max(ca, cb)
+	local tp = two ^ cmax
+	local sa = 0
+	local sb = 0
+   if a < zero then
+	   a = tp + a
+		sa = 1
+	end	
+	if b < zero then
+		b = tp + b
+		sb = 1
+	end
+	ca = a:numd2()
+	cb = b:numd2()
+	cmax = max(ca, cb)
+	cmin = min(ca, cb)
+	local r = zero
+	for i = 1, cmin do
+      local ma = a % two
+      local mb = b % two
+   	r = r + one:shiftleft(i - 1) * (ma * mb)
+      a = a:shiftright(1)
+		b = b:shiftright(1)
+	end
+	if sa * sb == 0 then
+		return r
+	else
+		return -(tp - r)
+	end	
+end 
+
+function idris.borbi(a, b)
+	local a = bigint:new(a)
+	local b = bigint:new(b)
+   local zero = bigint:new(0)
+	local one = bigint:new(1)
+	local two = bigint:new(2)
+	local ca = a:numd2()
+	local cb = b:numd2()
+	local cmax = max(ca, cb)
+	local tp = two ^ cmax
+	local sa = 0
+	local sb = 0
+   if a < zero then
+	   a = tp + a
+		sa = 1
+	end	
+	if b < zero then
+		b = tp + b
+		sb = 1
+	end
+	ca = a:numd2()
+	cb = b:numd2()
+	cmax = max(ca, cb)
+	local r = zero
+	for i = 1, cmax do
+      local ma = a % two
+      local mb = b % two
+		local mc = 0
+		if ma > 0 or mb > 0 then mc = 1 end
+   	r = r + one:shiftleft(i - 1) * mc
+      a = a:shiftright(1)
+		b = b:shiftright(1)
+	end
+	if sa == 0 and sb == 0 then
+		return r
+	else
+		return -(tp - r)
+	end	
+end 
+
+function idris.bxorbi(a, b)
+	local a = bigint:new(a)
+	local b = bigint:new(b)
+   local zero = bigint:new(0)
+	local one = bigint:new(1)
+	local two = bigint:new(2)
+	local ca = a:numd2()
+	local cb = b:numd2()
+	local cmax = max(ca, cb)
+	local tp = two ^ cmax
+	local sa = 0
+	local sb = 0
+   if a < zero then
+	   a = tp + a
+		sa = 1
+	end	
+	if b < zero then
+		b = tp + b
+		sb = 1
+	end
+	ca = a:numd2()
+	cb = b:numd2()
+	cmax = max(ca, cb)
+	local r = zero
+	for i = 1, cmax do
+      local ma = a % two
+      local mb = b % two
+   	r = r + one:shiftleft(i - 1) * ((ma + mb) % 2)
+      a = a:shiftright(1)
+		b = b:shiftright(1)
+	end
+	if (sa + sb) % 2 == 0 then
+		return r
+	else
+		return -(tp - r)
+	end	
+end 
 
 
 ---------------------------------
