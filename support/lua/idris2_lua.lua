@@ -259,16 +259,16 @@ end
 ---------------------------------
 
 --used in SchemeCall
-function idris.string (list)
+function idris.stringImpl (list, buffer)
 	if list.tag == "0" then
-		return ""
+		return table.concat(buffer) --concat all strings at once, only 1 allocation
 	else
 	   local c = list.arg2
-		local other = idris.string(list.arg3)
-		return c .. other
+		buffer[#buffer + 1] = c
+		return idris.stringImpl(list.arg3, buffer) --tail call
 	end	
 end
-
+idris.string = function(args) return idris.stringImpl(args, {}) end
 idris["string-append"] = idris.string
 
 
