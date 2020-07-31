@@ -43,9 +43,15 @@ Lua backend for Idris 2
  - Backend needs to know what version of Lua you target as there are incompatibilities:	
    Define `LuaVersion` global varible with a value of `5.1`, `5.2`, `5.3` or `5.4`??
  - If you want to run generated code from REPL, define `LuaExe` which is the name of lua executable (which should be in `PATH`) of the target version.
-   If the variable is undefined, the backend will default to `lua`.	
+   If the variable is undefined, the backend will default to `lua`.
+
+
+### Good to know
+ - Lua 5.1 and Lua 5.2 do not support 64 bit integers !
+   Best precision you can get is 52 bits
+	Also, if you use Buffers maximum precision is 48 bits !
+	Disregarding the Lua version ! This is planned to be fixed moving to native buffers
+ - Bits8, Bits16, Bits32, Bits64 are not yet implemented	
 
 ### Tests - TODO
 
-try running an example `Test.idr` in `test` directory,
-the name of the executable file is `idris2-lua`

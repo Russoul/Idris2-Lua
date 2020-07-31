@@ -772,7 +772,7 @@ mutual
     pure ()   
   processForeignDef name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
     pure () 
-  processForeignDef name hints argtys retty = do
+  processForeignDef name hints argtys retty = do --TODO refine this, use special namespace (table) for userdefined assignments
       let ((def, maybeReq), replace) 
           = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
       log 2 $ "using %foreign " ++ def
