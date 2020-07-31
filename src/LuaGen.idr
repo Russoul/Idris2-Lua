@@ -205,15 +205,15 @@ mutual
   stringifyBitOp n (BOr IntegerType) [x, y] ver = stringifyFnApp n "idris.borbi" [x, y] 
   stringifyBitOp n (BXOr IntegerType) [x, y] ver = stringifyFnApp n "idris.bxorbi" [x, y] 
   stringifyBitOp n op _ _ = [opNotSupportedErr (show op)]
-  
+
+    
   stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
   stringifyString str =
-   let vstr = show str in --unpack is necessary as function stack size is very limited in lua
-       "utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ substr 1 (vstr.length `minus` 2) vstr ++ "--]]"
+    let vstr = show str in --unpack is necessary as function stack size is very limited in lua
+        "utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ trimQuotes vstr ++ "--]]"
 
   stringify :
-        --{auto buf : Ref LuaCode StrBuffer}
-      {auto copts : COpts}
+        {auto copts : COpts}
      -> (n : Nat) 
      -> LuaExpr 
      -> DeferedStr 
@@ -263,19 +263,45 @@ mutual
   stringify n (LBigInt num) = [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
   stringify n (LString s) = [ indent n , stringifyString s ]
   stringify n (LComment s) = [ indent n, "--[[ ",  s, " --]]"]
-  stringify n (LTable kvs) =
+  stringify n (LTable []) = ["{}"]
+  stringify n (LTable kvs@(_ :: _)) =
     [ indent n , "{\n" 
-    , sepBy ((\(k, v) => [indent (S n) , "[", stringify Z k, "]", " = \n" , stringify (n + 2) v]) <$> kvs) ",\n" 
+    , sepBy ((\(k, v) => 
+            let general = [indent (S n), "[", stringify Z k, "]", " = \n", stringify (n + 2) v] in
+                case k of
+                     LDoNothing => [stringify (n + 1) v]
+                     (LString str) => let chars = unpack str in
+                        case ((\c => c == '_' || isAlpha c) 
+                              <$> chars.head' `orElse` False) 
+                             && forAll (\x => isAlphaNum x || x == '_') chars of --TODO properly look into what lua allows here
+                             True => [indent (S n), str, " = \n", stringify (n + 2) v]                           --lua can do
+                             False => general 
+                     (LNumber num) => [indent (S n), show num, " = \n", stringify (n + 2) v]                     --better at optimising these
+                     _ => general
+            ) <$> kvs)
+            ",\n" 
     , "\n" 
     , indent n 
     , "}" ]
   stringify n (LIndex e i) =
     [ indent n 
-    , "\n" ,stringify (S n) e 
+    , "\n" 
+    , stringify (S n) e 
     , "\n" 
     , indent n 
     , "[\n" 
-    , stringify (S n) i 
+    , the DeferedStr 
+       $ let general = stringify (S n) i in
+          case i of
+               (LString str) => let chars = unpack str in 
+                                    if ((\c => c == '_' || isAlpha c) 
+                                        <$> chars.head' `orElse` False) 
+                                       && forAll (\x => isAlphaNum x || x == '_') chars
+                                       then
+                                          [show str]
+                                       else
+                                          general
+               _ => general
     , "\n" 
     , indent n 
     , "]" ]
@@ -453,21 +479,16 @@ record StackFrame where   --each function has its own table that represents its 
                           --each such value represents one local variable of the innermost function
                           --stack emulation is required to bypass lua's local variable limit which is capped at 200 per function
                           --table indexing is not as fast as register access but that is an unevitable trade-off
-                          --TODO implement strategy where all lua functions take exactly one argument - its stack
-                          --which is prefilled with arguments at call site and later filled with locals during evaluation                               
-                          --that will 99.9% eliminate all possible runtime failures due to lua's stack limitation 
-                          --(except stack overflows)
                           --and you can still theoretically blow 200 locals limitation calling function with excessive amount of arguments
 
                           --SO using this method: each function has stack size of 1 + number of arguments + number of let bindings
-                          --In TODO version: exactly 1
                           --actually each function has one extra local: '_ENV' but I don't think it counts towards the limit
 
 record StackSt where
   constructor MkStackSt
   stack : List Int
   nextFrame : Int
-  nextIndex  : Int --if stack is empty, points to the next in current thread 
+  nextIndex  : Int --if stack is empty, points to the next free index in current thread 
 
 frameLowest : Int
 frameLowest = 1
@@ -479,8 +500,12 @@ frameName : StackFrame -> Name
 frameName (MkStackFrame i) = MN "frame" i
 
 
-declFrameTable : StackFrame -> LuaExpr
-declFrameTable frame = LAssign (Just Local) (LLVar (frameName frame)) (LTable [])
+declFrameTable : StackFrame -> Int -> LuaExpr
+declFrameTable frame numOfVars = 
+ if numOfVars > 0 then
+       LAssign (Just Local) (LLVar (frameName frame)) (LTable (replicate (integerToNat (cast numOfVars)) (LDoNothing, LNil)))
+    else
+       LDoNothing
 
 record PreambleSt where
   constructor MkPreambleSt
@@ -510,14 +535,17 @@ pushLocal =
     put Stack (record{nextIndex $= (+1)} s)
     pure (LIndex (LLVar (frameName frame)) (LNumber (show i))) 
 
-popFrame : {auto c : Ref Stack StackSt} -> Core ()
+||| returns number of local variables in popped frame
+popFrame : {auto c : Ref Stack StackSt} -> Core Int
 popFrame = 
   do
      s <- get Stack
      let i = nextFrame s
+     let v = nextIndex s
      case (i <= frameLowest, stack s) of
-          (False, (nextIndex :: other)) =>
+          (False, (nextIndex :: other)) => do
              put Stack (record{nextFrame $= (\i => i - 1), nextIndex = nextIndex, stack = other} s)
+             pure (v - 1)
           (_, _) => throw (UserError "Attempt to pop from an empty stack")                 
 
 
@@ -801,8 +829,8 @@ mutual
     do
       newFrame <- pushFrame
       (ce, e) <- processExpr {frame = newFrame} e
-      popFrame
-      pure (LDoNothing, LLambda [n] (declFrameTable newFrame <+> ce <+> LReturn e)) --paste inner block here
+      vars <- popFrame
+      pure (LDoNothing, LLambda [n] (declFrameTable newFrame vars <+> ce <+> LReturn e)) --paste inner block here
   processExpr (NmApp _ f args) =
     do
       (cf, f) <- processExpr f
@@ -835,7 +863,7 @@ mutual
       (blockA, sc) <- processExpr sc
       conVar <- pushLocal
       alts <- traverse (processConsAlt conVar) alts
-      let table = LTable []
+      let table = LTable (replicate alts.length (LDoNothing, LNil)) --preallocate space
       tableVar <- pushLocal
       let assignments = (\(k, v) => LAssign Nothing (LIndex tableVar k) v) <$> alts
       mdef <- lift $ processExpr <$> def
@@ -853,7 +881,7 @@ mutual
       (blockA, sc) <- processExpr sc
       constVar <- pushLocal
       alts <- traverse processConstAlt rawalts
-      let table = LTable []
+      let table = LTable (replicate alts.length (LDoNothing, LNil)) --preallocate space
       tableVar <- pushLocal
       let assignments = (\(k, v) => LAssign Nothing (LIndex tableVar k) v) <$> alts
       mdef <- lift $ processExpr <$> def
@@ -892,8 +920,8 @@ mutual
     do
       newFrame <- pushFrame
       (blockA, t) <- processExpr {frame = newFrame} t
-      popFrame
-      pure (LDoNothing, LLambda [] (declFrameTable newFrame <+> blockA <+> LReturn t))
+      vars <- popFrame
+      pure (LDoNothing, LLambda [] (declFrameTable newFrame vars <+> blockA <+> LReturn t))
   processExpr (NmForce _ t) =
     do
       (blockA, t) <- processExpr t
@@ -948,8 +976,8 @@ mutual
       let bindings = 
        zipWith (\i, n => if used n res' then LAssign (Just Local) (LLVar n) $ LIndex cons (indexConstructorArg i) else LDoNothing) 
                 [1..args.length] args --TODO use stack instread of let bindings, replace names
-      popFrame          
-      pure (LString $ processTag name mbtag, LLambda [] $ declFrameTable newFrame 
+      vars <- popFrame          
+      pure (LString $ processTag name mbtag, LLambda [] $ declFrameTable newFrame vars 
                                                           <+> concat bindings 
                                                           <+> blockA {-blockA uses those bindings-} 
                                                           <+> LReturn res)
@@ -964,11 +992,14 @@ mutual
   processConstAlt alt@(MkNConstAlt c res) =
     do
       const <- processConstant c
+      let const = 
+          case c of
+               (BI i) => LString (show i) --all constants are LString or LNumber
+               _ => const
       newFrame <- pushFrame
       (blockA, res) <- processExpr {frame = newFrame} res
-      key <- constCaseIndex alt const
-      popFrame
-      pure (key, LLambda [] $ declFrameTable newFrame 
+      vars <- popFrame
+      pure (const, LLambda [] $ declFrameTable newFrame vars 
                               <+> blockA 
                               <+> LReturn res)
 
@@ -995,8 +1026,8 @@ mutual
       else do   
          newFrame <- pushFrame
          (blockA, expr) <- processExpr {frame = newFrame} expr
-         popFrame
-         pure $ LFnDecl n args $ declFrameTable newFrame 
+         vars <- popFrame
+         pure $ LFnDecl n args $ declFrameTable newFrame vars 
                                 <+> blockA 
                                 <+> (LReturn expr) --paste code block into function def
 
@@ -1054,18 +1085,18 @@ translate defs term = do
   let con_cdefs = concat cdefs
   --TODO tail call optimization
   frame <- pushFrame
-  let frameTable = declFrameTable frame
   (block, main) <- processExpr {frame = frame} ctm
-  popFrame
+  vars <- popFrame
+  let frameTable = declFrameTable frame vars
   clock4 <- coreLift $ clockTime Monotonic
   logLine $ "Compiled main [4/5] in " ++ showMillis (toMillis $ timeDifference clock4 clock3)
   preamble <- getPreamble
 
   support <- if opts.dynamicSupportLib.get
                    then
-                     pure "require(\"idris2_lua\")"
+                     pure "require(\"idris2-lua\")"
                    else
-                     readDataFile $ "lua" </> "idris2_lua.lua"
+                     readDataFile $ "lua" </> "idris2-lua.lua"
 
 
   let stringPlan : DeferedStr =
@@ -1118,7 +1149,7 @@ execute defs tmpDir term = do
   Right () <- coreLift $ writeBufferToFile (tmpDir </> file) strbuf.get strbuf.offset
     | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (tmpDir </> file) err
   coreLift $ freeBuffer strbuf.get
-  _ <- coreLift $ system $ "'" ++ lua ++ "' " ++ "\"" ++ escapeString (tmpDir </> file) ++ "\""
+  _ <- coreLift $ system $ "'" ++ lua ++ "' " ++ show (tmpDir </> file)
   pure ()
 
 luaCodegen : Codegen

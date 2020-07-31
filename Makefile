@@ -37,6 +37,8 @@ ${TARGET}:
 
 clean: 
 	$(RM) -r build
+	$(RM) support/lua/*.so
+	$(RM) support/lua/*.o
 
 install: install-idris2-lua install-support 
 
@@ -51,9 +53,9 @@ endif
 
 install-support: check-env
 	mkdir -p ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
-	install support/lua/idris2_lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 	cd support/lua; \
-	luarocks make --lua-version=${LuaVersion}
+	luarocks make --lua-version=$(LuaVersion) 
+	install support/lua/idris2-lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 
 check-env:
 ifndef LuaVersion

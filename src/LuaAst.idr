@@ -25,12 +25,12 @@ data LuaExpr = LLVar Name
               | LLambda (List Name) LuaExpr
               | LApp LuaExpr (List LuaExpr)
               | LPrimFn (PrimFn arity) (Vect arity LuaExpr)
-              | LTrue
-              | LFalse
-              | LNil
-              | LNumber String
-              | LBigInt String
-              | LString String
+              | LTrue          --literal 'true'
+              | LFalse         --literal 'false'
+              | LNil           --literal 'nil'
+              | LNumber String --literal number
+              | LBigInt String --literal bigint
+              | LString String --literal string
               | LTable (List (LuaExpr, LuaExpr))
               | LIndex LuaExpr LuaExpr
               | LSeq LuaExpr LuaExpr

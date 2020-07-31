@@ -5,9 +5,9 @@
 --idris.noRequire  {true,false}
 
 if not idris.noRequire then
+   idrisn = require("idris2-lua_native")
 	utf8 = require("lua-utf8")
 	bigint = require("bigint")
-	inspect = require("inspect")
 	lfs = require("lfs")
 	vstruct = require("vstruct")
 end
@@ -127,9 +127,10 @@ function bigint.abs(x)
 end
 
 function bigint.numd2(x)
+	local zero = bigint:new(0)
 	local n = 0
 	local x = x:abs()
-	while x > 0 do
+	while x > zero do
 		n = n + 1
 		x = x:shiftright(1)
 	end	
@@ -202,8 +203,8 @@ function idris.borbi(a, b)
 	for i = 1, cmax do
       local ma = a % two
       local mb = b % two
-		local mc = 0
-		if ma > 0 or mb > 0 then mc = 1 end
+		local mc = zero
+		if ma > zero or mb > zero then mc = one end
    	r = r + one:shiftleft(i - 1) * mc
       a = a:shiftright(1)
 		b = b:shiftright(1)
@@ -242,7 +243,7 @@ function idris.bxorbi(a, b)
 	for i = 1, cmax do
       local ma = a % two
       local mb = b % two
-   	r = r + one:shiftleft(i - 1) * ((ma + mb) % 2)
+   	r = r + one:shiftleft(i - 1) * ((ma + mb) % two)
       a = a:shiftright(1)
 		b = b:shiftright(1)
 	end
@@ -474,7 +475,7 @@ idris["System.File.prim__writeLine"] = function(file, line)
 end
 
 idris["System.File.prim__eof"] = function(file)
-	if file.deref.handle:read(0) then return 0 else return 1 end 
+	if idrisn.feof(file.deref.handle) == 0 then return 0 --[[ no EOF --]] else return 1 --[[ EOF --]] end 
 end
 
 idris["System.File.prim__flush"] = function(file)
@@ -736,7 +737,7 @@ function idris.getOS()
 			if popen_status then
 				if popen_result then popen_result:close() end
 				-- Unix-based OS
-				raw_os_name = io.popen('uname -s 2>/dev/null','r'):read(idris.readl)
+				raw_os_name = io.popen('uname -s'):read(idris.readl)
          end
 		end	
 	  end	

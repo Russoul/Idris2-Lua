@@ -8,7 +8,7 @@ source = {
 description = {
   summary = "Support module for Lua backend of Idris 2",
   detailed = [[
-   Defines functions that combined serve as a backend library for Lua backend of Idris 2
+   Defines functions that serve as a library for Lua backend of Idris 2
   ]],
   homepage = "http://github.com/russoul/idris2-lua",
   license = "MIT",
@@ -21,6 +21,7 @@ dependencies = {
 build = {
   type = "builtin",
   modules = {
-    idris2_lua = "idris2_lua.lua"
+    ["idris2-lua"] = "idris2-lua.lua",
+	 ["idris2-lua_native"] = "lib.c"
   }
 }

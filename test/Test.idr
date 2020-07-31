@@ -67,7 +67,7 @@ testInteger x y = x * x * x * x - 1
 
 data Lua : Type where [external]
 
-%foreign "lua:function (ty, x) return inspect(x) end|inspect"
+%foreign "lua:function (ty, x) return idris.inspect(x) end|inspect"
 inspect : {0 a : Type} -> (x : a) -> String
 --inspect : (HasIO io) => a -> String
 

@@ -27,7 +27,7 @@ namespace Strings
    public export
    ||| replaces all occurances of literal @lit 
    ||| in string @str 
-   replaceAll :
+   replaceAll : --TODO rename
          (lit : String) 
       -> (str : String)
       -> String
@@ -188,20 +188,20 @@ indent : Nat -> String
 indent n = StrExtra.replicate (2 * n) ' '
 
 
-public export
-escapeString : String -> String
-escapeString s = concatMap okchar (unpack s)
-  where
-    okchar : Char -> String
-    okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
-                  then cast c
-                  else case c of
-                            '\0' => "\\0"
-                            '\'' => "\\'"
-                            '"' => "\\\""
-                            '\r' => "\\r"
-                            '\n' => "\\n"
-                            other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
+-- public export
+-- escapeString : String -> String
+-- escapeString s = concatMap okchar (unpack s)
+--   where
+--     okchar : Char -> String
+--     okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
+--                   then cast c
+--                   else case c of
+--                             '\0' => "\\0"
+--                             '\'' => "\\'"
+--                             '"' => "\\\""
+--                             '\r' => "\\r"
+--                             '\n' => "\\n"
+--                             other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
 
 export
 lift : Maybe (Core a) -> Core (Maybe a)
@@ -271,5 +271,13 @@ sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
 sepBy (x :: []) _ = [x]
 sepBy [] _ = []
 
+--it is actually more general than that, but whatever
+export
+trimQuotes : String -> String
+trimQuotes x = substr 1 (x.length `minus` 2) x
 
 
+export
+forAll : (a -> Bool) -> List a -> Bool
+forAll f (x :: xs) = f x && forAll f xs
+forAll f [] = True
