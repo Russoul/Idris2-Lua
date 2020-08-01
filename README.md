@@ -1,11 +1,11 @@
-# idris2-lua
+# Idris2-Lua
 Lua backend for Idris 2
 
 ## Precautions
 - This this WIP, expect bugs or undocumented behavior. If you find yourself struggling to install or use the backend
   please file an issue, I will try to resolve it as fast as possible.
 
-## Requirements
+## Requirements & Installation
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
 - Target Lua versions: 5.1, 5.2, 5.3, 5.4 (not tested, but planned), Luajit
 - Depends on [lua-utf8](https://github.com/starwing/luautf8.git), [lua-bigint](https://github.com/JorjBauer/lua-bigint.git),
@@ -21,10 +21,10 @@ Lua backend for Idris 2
   `luarocks install luautf8 && luarocks install bigint`
 
   `luarocks install luafilesystem && luarocks install vstruct`
-## Installation
- - `make all && make install`
-
-### Status
+  
+  `make all && make install`
+  
+## Status
  - Backend can build Idris 2 itself into one single Lua executable (source) 
    file approximately 7M lines long 
    (with no indents and one extra new line between logical parts).
@@ -54,6 +54,3 @@ Lua backend for Idris 2
    Also, if you use Buffers maximum precision is 48 bits !
    Disregarding the Lua version ! This is planned to be fixed moving to native buffers
  - Bits8, Bits16, Bits32, Bits64 are not yet implemented
-
-### Tests - TODO
-
