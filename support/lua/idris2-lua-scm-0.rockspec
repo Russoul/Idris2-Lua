@@ -22,6 +22,6 @@ build = {
   type = "builtin",
   modules = {
     ["idris2-lua"] = "idris2-lua.lua",
-	 ["idris2-lua_native"] = "lib.c"
+    ["idris2-lua_native"] = "lib.c"
   }
 }
