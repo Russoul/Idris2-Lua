@@ -28,6 +28,8 @@ data Stack : Type where
 data Preamble : Type where
 data LuaCode : Type where
 
+logTopic : String
+logTopic = "Idris2-lua"
 
 data WithDefault : (0 a : Type) -> Maybe a -> Type where
    MkWithDefault : {0 a : Type} -> (x : a) -> (mbdef : Maybe a) -> WithDefault a mbdef
@@ -91,13 +93,27 @@ stringifyVisibility : Visibility -> String
 stringifyVisibility Global = ""
 stringifyVisibility Local = "local"
 
+|||As lua does not support general expressions with return values
+|||We can emulate this with code blocks and local variables
+|||Instead of returning a code block we assign its return value to a local variable
+|||And pass both along the compilation pipeline
+|||Code blocks build up until the pipeline reaches back any function definition
+|||Stockpiled block then gets pasted into the body of that nearest containing function
+LuaBlock : Type
+LuaBlock = (LuaExpr {-Block (may be empty)-}, LuaExpr {-Expr representing the return value of that block-})
+
 mkErrorAst : String -> LuaExpr
 mkErrorAst str = 
-    LApp (LGVar (UN "error")) [LString str]
-mkErrorAst' : LuaExpr -> LuaExpr
-mkErrorAst' str = 
-    LApp (LGVar (UN "error")) [str]
+   LApp (LGVar (UN "error")) [LString str]
 
+mkCrashAst : LuaExpr -> LuaExpr
+mkCrashAst crash =
+    LApp (LLambda [] (    LApp (LGVar (UN "print"))
+                               [LPrimFn StrAppend [LString "ERROR: ", crash]] 
+                      <+> LApp (LGVar (UN "os.exit")) [LNumber "1"])) [] 
+
+luaNull : LuaExpr
+luaNull = LGVar (UN "null")
 
 ifThenElseName : Name
 ifThenElseName = UN "idris__ifThenElse"
@@ -434,7 +450,9 @@ mutual
   stringify n (LPrimFn (Cast from to) [x]) = 
     [ stringify n $ mkErrorAst $ "invalid cast: from " ++ show from ++ " to " ++ show to ]
   stringify n (LPrimFn BelieveMe [_, _, x]) = stringify n x
-  stringify n (LPrimFn Crash [_, msg]) = stringify n $ mkErrorAst' msg 
+  stringify n (LPrimFn Crash [_, msg])
+   = let ast = mkCrashAst msg in
+         [stringify n ast]
   stringify n (LPrimFn op args) = stringify n $ mkErrorAst $ "unsupported primitive function: " ++ show op
 
 
@@ -612,16 +630,6 @@ processConstant (Db x) = pure $ LNumber (show x)
 processConstant WorldVal = pure $ LString (show WorldVal)
 processConstant c = throw $ InternalError ("Unsupported constant '" ++ (show c) ++ "' detected")
 
-
-|||As lua does not support general expressions with return values
-|||We can emulate this with code blocks and local variables
-|||Instead of returning a code block we assign its return value to a local variable
-|||And pass both along the compilation pipeline
-|||Code blocks build up until the pipeline reaches back any function definition
-|||Stockpiled block then gets pasted into the body of that nearest containing function
-LuaBlock : Type
-LuaBlock = (LuaExpr {-Block (may be empty)-}, LuaExpr {-Expr representing the return value of that block-})
-
 justReturn : LuaExpr -> LuaBlock
 justReturn expr = (LDoNothing, expr)
 
@@ -640,7 +648,7 @@ mkCaseImpl retn (((blockA, cond), (blockB, arm)) :: xs) mbElse = do
 mkCaseImpl retn [] (Just (blockA, els)) =
   pure $ blockA <+> LAssign Nothing retn els
 mkCaseImpl retn [] Nothing = 
-  pure $ LAssign Nothing retn LNil --retn is by default initialized to `nil`
+  pure $ mkErrorAst "Impossible else branch"
 
 
 mkCase : 
@@ -732,6 +740,16 @@ mutual
       args' <- traverse processExpr args
       let (blockA, args) = unzip args'
       pure (concat blockA, LApp (LGVar name) args) --defined in support file
+  processExtCall name@(NS ["IO", "Prelude"] (UN "prim__onCollectAny")) args = 
+    do
+      args' <- traverse processExpr args
+      let (blockA, args) = unzip args'
+      pure (concat blockA, LApp (LGVar name) args) --defined in support file
+  processExtCall name@(NS ["IO", "Prelude"] (UN "prim__onCollect")) args = 
+    do
+      args' <- traverse processExpr args
+      let (blockA, args) = unzip args'
+      pure (concat blockA, LApp (LGVar name) args) --defined in support file
   processExtCall prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
 
 
@@ -775,10 +793,10 @@ mutual
   processForeignDef name hints argtys retty = do --TODO refine this, use special namespace (table) for userdefined assignments
       let ((def, maybeReq), replace) 
           = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
-      log 2 $ "using %foreign " ++ def
+      log logTopic 2 $ "using %foreign " ++ def
       case maybeReq of
            (Just pack) => do 
-                         log 2 $ "requiring " ++ pack
+                         log logTopic 2 $ "requiring " ++ pack
                          addDefToPreamble 
                           ("$" ++ pack) 
                            ((stringifyName Global (UN pack)) ++ " = require('" ++ pack ++ "')")
@@ -887,7 +905,7 @@ mutual
       mdef <- lift $ processExpr <$> def
       index <- 
           (\alt => constCaseIndex alt constVar) 
-          <$> head' rawalts `orElse` pure LNil --orElse is in case there is only default branch of case clause
+          <$> head' rawalts `orElse` pure luaNull --orElse is in case there is only default branch of case clause
       let indexed = LIndex tableVar index
       indexedVar <- pushLocal
       (blockB, cas) <- mkCase [(justReturn indexedVar, justReturn (LApp indexedVar []))] mdef
@@ -910,7 +928,7 @@ mutual
       --                <$> zip args [1..args.length]
       tableVar <- pushLocal
       let conArgs = zipWith (\i, arg => (LString $ "arg" ++ (show i), arg)) [1..args.length] args
-      let mbName = if opts.storeConstructorName.get then [(LString "name", LString $ stringifyName Global n), (LString "num", LNumber $ show args.length)] else []
+      let mbName = if opts.storeConstructorName.get then [(LString "cons", LString $ stringifyName Global n), (LString "num", LNumber $ show args.length)] else []
       let kvs = [(LString "tag", LString (processTag n mbtag))] ++ conArgs ++ mbName
       pure (concat blockA 
            <+> LAssign Nothing tableVar (LTable [])

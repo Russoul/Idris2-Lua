@@ -21,7 +21,7 @@ Eq Visibility where
 
 public export 
 data LuaExpr = LLVar Name
-              | LGVar Name
+              | LGVar Name --TODO add ability to index globals other than `idris`
               | LLambda (List Name) LuaExpr
               | LApp LuaExpr (List LuaExpr)
               | LPrimFn (PrimFn arity) (Vect arity LuaExpr)

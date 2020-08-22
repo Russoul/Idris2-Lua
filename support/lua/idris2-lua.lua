@@ -13,6 +13,8 @@ if not idris.noRequire then
 end
 
 idris.error = error
+idris.print = print
+idris["os.exit"] = os.exit
 
 -------------------------------------
 ---- Cross-Version Compatibility ----      --possible Lua version range is [5.1; 5.4]
@@ -82,10 +84,39 @@ function idris.getUnpack()
    end     
 end 
 
+function idris.getOnCollectAny()
+   if idris.luaVersion == 51 then
+      return function(ptr, f) error("prim__onCollectAny not implemented for Lua 5.1") end
+   else
+      return function (ptr, f)
+         local t = getmetatable(ptr)
+         if not t then t = {} end
+         t.__gc = f
+         setmetatable(ptr, t)
+         return ptr
+      end
+   end
+end
+function idris.getOnCollect()
+   if idris.luaVersion == 51 then
+      return 
+         function(ty, ptr, f) error("prim__onCollect not implemented for Lua 5.1") end
+   else
+      return function (ty, ptr, f)
+         local t = getmetatable(ptr)
+         if not t then t = {} end
+         t.__gc = f
+         setmetatable(ptr, t)
+         return ptr
+      end
+   end
+end
+
 bit32 = idris.getBit32()
 idris.tointeger = idris.getToInteger()
 idris.readl = idris.getReadLineString()
 idris.unpack = idris.getUnpack()
+idris.onCollectAny = idris.getOnCollectAny()
 
 function idris.signum(x)
    if x > 0 then
@@ -282,6 +313,9 @@ idris["PrimIO.prim__nullAnyPtr"] = function(ptr)
    end   
 end   
 
+idris["Prelude.IO.prim__onCollectAny"] = idris.onCollectAny
+idris["Prelude.IO.prim__onCollect"] = idris.onCollect
+
 idris["Prelude.IO.prim__getString"] = function(ptr)
    return ptr.deref
 end
@@ -314,7 +348,7 @@ idris["Prelude.IO.prim__getStr"] = function(world)
    end     
 end
 
-idris["System.prim_system"] = function(cmd)
+idris["System.prim__system"] = function(cmd)
    local success, typ, code = os.execute(cmd)
    return code
 end   
@@ -325,40 +359,40 @@ end
 
 idris.last_file_err = -1
 
-idris["System.Directory.prim_changeDir"] = function(d)
+idris["System.Directory.prim__changeDir"] = function(d)
    if lfs.chdir(d) then
-      return 0 --std lua int is 64bit
+      return 0
    else
       return 1
    end   
 end   
 
-idris["System.Directory.prim_currentDir"] = function()
-   local cwd = lfs.currentdir()
+idris["System.Directory.prim__currentDir"] = function()
+   local cwd, errstr = lfs.currentdir()
    return idris.mkPtr(cwd)
 end   
 
-idris["System.Directory.prim_createDir"] = function(d)
-   local ok, res, errno = pcall(lfs.mkdir, d)
+idris["System.Directory.prim__createDir"] = function(d)
+   local ok, errmsg = lfs.mkdir(d)
    if ok then
       return 0
    else
-      idris.last_file_err = errno
+      if errmsg == "File exists" then idris.last_file_err = 4 end
       return 1
    end   
 end   
 
-idris["System.Directory.prim_removeDir"] = function(d)
-   local ok, res, errno = pcall(lfs.rmdir, d)
+idris["System.Directory.prim__removeDir"] = function(d)
+   local ok, errmsg, errno = lfs.rmdir(d)
    if ok then
       return 0
    else
-      idris.last_file_err = errno
+      if errno then idris.last_file_err = errno end
       return 1
    end   
 end   
 
-idris["System.Directory.prim_openDir"] = function(d)
+idris["System.Directory.prim__openDir"] = function(d)
    local ok, iter, dir = pcall(lfs.dir, d)
    if ok then
       return idris.mkPtr(dir)
@@ -367,22 +401,22 @@ idris["System.Directory.prim_openDir"] = function(d)
    end   
 end
 
-idris["System.Directory.prim_closeDir"] = function(ptr)
+idris["System.Directory.prim__closeDir"] = function(ptr)
    local ok, res = pcall(function() return ptr.deref:close() end)
    --returns nothing
 end
 
-idris["System.Directory.prim_dirEntry"] = function(ptr)
+idris["System.Directory.prim__dirEntry"] = function(ptr)
    local ok, res, err, code = pcall(function() return ptr.deref:next() end)
    if ok then
       return idris.mkPtr(res) --returns dir name (String)
    else
-      idris.last_file_err = code
+      if code then idris.last_file_err = code end
       return null
    end   
 end   
 
-idris["System.Directory.prim_fileErrno"] = function()
+idris["System.Directory.prim__fileErrno"] = function()
    return idris.last_file_err
 end   
 
@@ -414,11 +448,11 @@ idris["System.File.prim__close"] = function(file)
    file.deref.handle:close()
 end
 
-idris["System.File.prim_error"] = function(file)
+idris["System.File.prim__error"] = function(file)
    if file ~= null then return 0 else return 1 end
 end
 
-idris["System.File.prim_fileErrno"] = function ()
+idris["System.File.prim__fileErrno"] = function ()
    return idris.last_file_error_code
 end
 
@@ -431,7 +465,7 @@ function idris.readFile(file, ty)
       if line then
          return idris.mkPtr(line)
       else   
-         return idris.mkPtr("") --nothing to read, return empty string
+         return idris.mkPtr("")  --nothing to read, return empty string
                                  --Idris behaviour
       end
    end   
@@ -440,7 +474,9 @@ end
 idris["System.File.prim__readLine"] = function(file)
    local ptr = idris.readFile(file, idris.readl)
    if ptr ~= null then
-      return idris.mkPtr(ptr.deref .. "\n")
+      if idris["System.File.prim__eof"](file) ~= 0 then -- no EOF 
+         return idris.mkPtr(ptr.deref .. "\n")
+      else return idris.mkPtr(ptr.deref) --[[ no EOL in case we hit EOF --]] end
    else
       return null
    end     
@@ -677,11 +713,11 @@ end
 ------------------- Builtin -------------------------
 -----------------------------------------------------
 
-idris["System.prim_getEnv"] = function(n)
+idris["System.prim__getEnv"] = function(n)
    return idris.mkPtr(os.getenv(n))
 end
 
-idris["System.prim_exit"] = function(code)
+idris["System.prim__exit"] = function(code)
    os.exit(code)
 end
 

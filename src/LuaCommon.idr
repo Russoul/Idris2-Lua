@@ -27,19 +27,18 @@ namespace Strings
    public export
    ||| replaces all occurances of literal @lit 
    ||| in string @str 
-   replaceAll : --TODO rename
+   removeAll : 
          (lit : String) 
       -> (str : String)
       -> String
-   replaceAll lit str with (str == "") 
-      replaceAll lit str | False =  
-         let other = replaceAll lit (substr (length lit) (length str `minus` length lit) str) in
-             if isPrefixOf lit str
-                then replaceAll lit (substr (length lit) (length str `minus` length lit) str)
-                else case strUncons str of
-                          Just (head, rest) => strCons head (replaceAll lit rest)
-                          Nothing => ""
-      replaceAll lit str | True = "" 
+   removeAll lit str with (str == "") 
+      removeAll lit str | False =  
+         if isPrefixOf lit str
+            then removeAll lit (substr (length lit) (length str `minus` length lit) str)
+            else case strUncons str of
+                      Just (head, rest) => strCons head (removeAll lit rest)
+                      Nothing => ""
+      removeAll lit str | True = "" 
          
 
 namespace LuaVersion
@@ -92,8 +91,8 @@ namespace LuaVersion
                 if isPrefixOf "lua" x
                   then drop 3 x
                   else x
-             nodots = replaceAll "." noprefix
-             nodashes = replaceAll "-" nodots
+             nodots = removeAll "." noprefix
+             nodashes = removeAll "-" nodots
              firstTwo = take 2 nodashes
          in      
              do int <- parseInteger {a = Int} firstTwo
@@ -265,11 +264,13 @@ traverse_ f ((::) x xs {prf = Right Refl}) = do traverse_ f x; traverse_ f xs
 traverse_ _ [] = pure ()
 
 
-export
-sepBy : List (DeferedStr) -> String -> DeferedStr
-sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
-sepBy (x :: []) _ = [x]
-sepBy [] _ = []
+namespace DeferedStr
+   export
+   sepBy : List (DeferedStr) -> String -> DeferedStr
+   sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
+   sepBy (x :: []) _ = [x]
+   sepBy [] _ = []
+
 
 --it is actually more general than that, but whatever
 export
