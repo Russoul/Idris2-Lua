@@ -114,6 +114,7 @@ end
 
 bit32 = idris.getBit32()
 idris.tointeger = idris.getToInteger()
+strtointeger = function (str) return math.floor(tonumber(str)) end
 idris.readl = idris.getReadLineString()
 idris.unpack = idris.getUnpack()
 idris.onCollectAny = idris.getOnCollectAny()

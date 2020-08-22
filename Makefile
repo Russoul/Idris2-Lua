@@ -26,9 +26,9 @@ else
 endif
 
 
-.PHONY: all idris2-lua-exec ${TARGET} clean check-env
+.PHONY: all idris2-lua-exec ${TARGET} clean check-env test
 
-all: ${TARGET} 
+all: ${TARGET} test
 
 idris2-lua-exec: ${TARGET}
 
@@ -56,6 +56,10 @@ install-support: check-env
 	cd support/lua; \
 	luarocks make --lua-version=$(LuaVersion) 
 	install support/lua/idris2-lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
+
+test:
+	make -C tests IDRIS2_LUA=../${TARGET}
+
 
 check-env:
 ifndef LuaVersion

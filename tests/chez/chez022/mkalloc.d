@@ -1,0 +1,1 @@
+mkalloc.o: mkalloc.c

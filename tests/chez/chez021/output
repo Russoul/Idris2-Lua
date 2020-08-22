@@ -1,0 +1,6 @@
+1/1: Building Bits (Bits.idr)
+Main> ["1", "200", "248", "1", "255", "200", "254"]
+Main> ["True", "False"]
+Main> ["255", "65535", "4294967295", "18446744073709551615"]
+Main> Error: INTERNAL ERROR: Unsupported constant '1' detected
+Main> Bye for now!

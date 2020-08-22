@@ -422,7 +422,7 @@ mutual
 
 
 
-  stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "tonumber" [x] 
+  stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "strtointeger" [x] --defined in support
   stringify n (LPrimFn (Cast StringType DoubleType) [x]) = stringifyFnApp n "tonumber" [x]
   stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
