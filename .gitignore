@@ -25,6 +25,8 @@ idris2docs_venv
 /tests/**/*.dll
 /tests/build/exec
 
+/support/lua/*.so
+
 .DS_Store
 
 /custom.mk
