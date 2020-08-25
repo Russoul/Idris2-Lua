@@ -35,7 +35,6 @@ Lua backend for Idris 2
  - Idris 2 running on Lua can build `Prelude`, quite slow though. Yet binaries generated this way are digitally not the same as those built by Idris's Scheme backend.
    Their functionality has not yet been tested. But the only fact that it can do that brings hope :)
  - Major `chez` tests taken from the official repository under `tests/chez` run successfully, but not all !
- - There is still no proper testing system
  - There is an issue with Lua 5.1 that causes stack overflows, it will be looked upon.
 
 ### Structure and How-Tos
