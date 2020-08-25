@@ -25,4 +25,6 @@ idris2docs_venv
 /tests/**/*.dll
 /tests/build/exec
 
+.DS_Store
+
 /custom.mk
