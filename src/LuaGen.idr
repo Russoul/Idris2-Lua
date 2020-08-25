@@ -29,7 +29,7 @@ data Preamble : Type where
 data LuaCode : Type where
 
 logTopic : String
-logTopic = "Idris2-lua"
+logTopic = "idris2-lua"
 
 data WithDefault : (0 a : Type) -> Maybe a -> Type where
    MkWithDefault : {0 a : Type} -> (x : a) -> (mbdef : Maybe a) -> WithDefault a mbdef
@@ -222,7 +222,7 @@ mutual
   stringifyBitOp n (BXOr IntegerType) [x, y] ver = stringifyFnApp n "idris.bxorbi" [x, y] 
   stringifyBitOp n op _ _ = [opNotSupportedErr (show op)]
 
-    
+
   stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
   stringifyString str =
     let vstr = show str in --unpack is necessary as function stack size is very limited in lua
@@ -603,7 +603,7 @@ addDefToPreamble name def okIfDefined = do
           pure ()
       Just _ => 
           if not okIfDefined then
-               throw $ InternalError $ "Attempt to redefine preamble definition '" ++ name ++ "'"
+               throw $ InternalError $ "Attempt to redefine the preamble definition '" ++ name ++ "'"
              else
                pure ()
 
@@ -675,7 +675,6 @@ mutual
              ,NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")
              ,NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")
              ,NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")
-             ,NS ["PrimIO"] (UN "prim__schemeCall")
              ,NS ["Info", "System"] (UN "prim__os")
              ,NS ["Uninhabited", "Prelude"] (UN "void")] --TODO add other implemented names
 
@@ -724,12 +723,13 @@ mutual
       (blockA, ar) <- processExpr ar
       (blockB, i) <- processExpr i
       (blockC, v) <- processExpr v
-      pure (blockA <+> blockB <+> blockC <+> LAssign Nothing (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"])) v, LTable [(LString "tag", LString "0")] {-Unit-}) 
-  processExtCall name@(NS ["PrimIO"] (UN "prim__schemeCall")) args = 
-    do
-      args' <- traverse processExpr args
-      let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LGVar name) args) --defined in support file
+      pure ( blockA
+              <+> blockB
+              <+> blockC
+              <+> LAssign Nothing
+                          (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
+                          v
+           , LTable [(LString "tag", LString "0")] {-Unit-})
   processExtCall name@(NS ["Info", "System"] (UN "prim__os")) args =
     do
       args' <- traverse processExpr args
@@ -785,11 +785,15 @@ mutual
        -> CFType
        -> Core ()
   processForeignDef name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
-    pure ()   
+    pure ()
   processForeignDef name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
-    pure ()   
+    pure ()
   processForeignDef name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
-    pure () 
+    pure ()
+  processForeignDef name@(NS ["Strings", "Data"] (UN "fastConcat")) hints argtys retty =
+    pure ()
+  processForeignDef name@(NS ["Types", "Prelude"] (UN "fastPack")) hints argtys retty =
+    pure ()
   processForeignDef name hints argtys retty = do --TODO refine this, use special namespace (table) for userdefined assignments
       let ((def, maybeReq), replace) 
           = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
@@ -1063,7 +1067,7 @@ builtinSupportDefs : List LuaExpr -- add top level lua defs from here or through
 builtinSupportDefs = []
 
 
-getCOpts : Core COpts
+getCOpts : Core COpts --TODO use directives ?
 getCOpts = 
    do
       opt1 <- coreLift $ getEnv "StoreConsName"
@@ -1144,30 +1148,53 @@ translate defs term = do
   strbuf <- get LuaCode
   pure strbuf
 
-compile : Ref Ctxt Defs -> (tmpDir : String) -> (outputDir : String) ->
-        ClosedTerm -> (outfile : String) -> Core (Maybe String)
-compile defs tmpDir outputDir term file = do 
+bashScript : String -> String -> String
+bashScript luaexe scriptname {-with extention-}
+ =   "#!/usr/bin/env bash" ++ "\n"
+  ++ "BASEDIR=$(dirname \"$0\")" ++ "\n"
+  ++ luaexe ++ " $BASEDIR/" ++ scriptname ++ " $@"
+
+getLuaExe : IO String
+getLuaExe
+ = do
+      mbDefined <- getEnv "LuaExe"
+      pure $ mbDefined `orElse` "lua"
+
+build : Ref Ctxt Defs --TODO add option to build only .lua file
+     -> String
+     -> ClosedTerm
+     -> String {-relative-}
+     -> Core String
+build defs outputDir term file = do
    
   strbuf <- translate defs term
-  Right () <- coreLift $ writeBufferToFile (outputDir </> file) strbuf.get strbuf.offset
-    | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (outputDir </> file) err
+  let luaFile = file ++ ".lua"
+  Right () <- coreLift $ writeBufferToFile (outputDir </> luaFile) strbuf.get strbuf.offset
+   | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (outputDir </> luaFile) err
   coreLift $ freeBuffer strbuf.get
-    
-  pure $ Just (outputDir </> file)
 
-execute : Ref Ctxt Defs -> (tmpDir : String) -> ClosedTerm -> Core ()
+  luaExe <- coreLift getLuaExe
+
+  Right () <- coreLift $ writeFile (outputDir </> file) (bashScript luaExe luaFile)
+   | Left err => do throw $ FileErr (outputDir </> file) err
+
+  Right () <- coreLift $ chmodRaw (outputDir </> file) 0o755
+   | Left err => do throw $ FileErr (outputDir </> file) err
+    
+  pure (outputDir </> file)
+
+compile : Ref Ctxt Defs
+       -> String
+       -> String
+       -> ClosedTerm
+       -> String
+       -> Core (Maybe String)
+compile defs tmpDir outputDir term file = Just <$> build defs outputDir term file
+
+execute : Ref Ctxt Defs -> String -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
-  strbuf <- translate defs term
-  let file = "generated.lua"
-  lua <- coreLift $
-    do
-      mbDefined <- getEnv "LuaExe" 
-      pure $ mbDefined `orElse` "lua"
-  
-  Right () <- coreLift $ writeBufferToFile (tmpDir </> file) strbuf.get strbuf.offset
-    | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (tmpDir </> file) err
-  coreLift $ freeBuffer strbuf.get
-  _ <- coreLift $ system $ "'" ++ lua ++ "' " ++ show (tmpDir </> file)
+  exe <- build defs tmpDir term "generated"
+  _ <- coreLift $ system $ "'" ++ exe ++ "' "
   pure ()
 
 luaCodegen : Codegen

@@ -1,10 +1,11 @@
 INTERACTIVE ?= --interactive
 
+IDRIS2 ?= idris2
 IDRIS2_LUA ?= ../build/exec/idris2-lua
 .PHONY: testbin test
 
 test:
-	$(IDRIS2_LUA) --build tests.ipkg && $(LuaExe) ./build/exec/runtests ../../$(IDRIS2_LUA) $(INTERACTIVE) --only $(only)
+	$(IDRIS2) --build tests.ipkg && ./build/exec/runtests ../../$(IDRIS2_LUA) $(INTERACTIVE) --only $(only)
 
 clean:
 	$(RM) -r build

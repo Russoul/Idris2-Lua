@@ -289,18 +289,18 @@ end
 ---------- Basic stuff ----------
 ---------------------------------
 
---used in SchemeCall
-function idris.stringImpl (list, buffer)
+function idris.fastConcatImpl(list, buffer)
    if list.tag == "0" then
       return table.concat(buffer) --concat all strings at once, only 1 allocation
    else
-      local c = list.arg2
+      local c = list.arg1
       buffer[#buffer + 1] = c
-      return idris.stringImpl(list.arg3, buffer) --tail call
+      return idris.fastConcatImpl(list.arg2, buffer) --tail call
    end   
 end
-idris.string = function(args) return idris.stringImpl(args, {}) end
-idris["string-append"] = idris.string
+idris.fastConcat = function(args) return idris.fastConcatImpl(args, {}) end --impl of fastConcat
+idris["Data.Strings.fastConcat"] = idris.fastConcat
+idris["Prelude.Types.fastPack"] = idris.fastConcat
 
 function idris.mkPtr(val)
    if val then return {deref=val} else return null end
@@ -475,7 +475,7 @@ end
 idris["System.File.prim__readLine"] = function(file)
    local ptr = idris.readFile(file, idris.readl)
    if ptr ~= null then
-      if idris["System.File.prim__eof"](file) ~= 0 then -- no EOF 
+      if idris["System.File.prim__eof"](file) == 0 then -- no EOF
          return idris.mkPtr(ptr.deref .. "\n")
       else return idris.mkPtr(ptr.deref) --[[ no EOL in case we hit EOF --]] end
    else
@@ -788,16 +788,6 @@ idris["System.Info.prim__os"] = function()
    return idris.getOS()
 end   
 
-idris["PrimIO.prim__schemeCall"] = function(ret, name, args, world)
-   local f = idris[name]
-   if f then
-      return f(args)
-   else
-      error("Could not find lua function: " .. "idris." .. name .. "\n" .. 
-            "All functions used with 'schemeCall' must be defined in 'idris' table in order to link")
-   end  
-end
-
 function idris.ifThenElse(cond, ifTrue, ifFalse)
    local r
    if
@@ -809,3 +799,9 @@ function idris.ifThenElse(cond, ifTrue, ifFalse)
    end
    return r
 end
+
+idris["Utils.Term.prim__setupTerm"] = function() end
+
+--TODO add native library code to deal with this
+idris["Utils.Term.prim__getTermCols"] = function () return 0 end
+idris["Utils.Term.prim__getTermLines"] = function () return 0 end
