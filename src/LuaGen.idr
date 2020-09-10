@@ -122,7 +122,7 @@ getArgsName : Name
 getArgsName = UN "idris__getArgs"
 
 stringifyNameGlobal : Name -> String
-stringifyNameGlobal (NS ns n) = join "." (reverse ns) ++ "." ++ stringifyNameGlobal n
+stringifyNameGlobal (NS ns n) = (show ns) ++ "." ++ stringifyNameGlobal n
 stringifyNameGlobal (UN x) = x
 stringifyNameGlobal (MN x y) = "{" ++ x ++ ":" ++ show y ++ "}"
 stringifyNameGlobal (PV n d) = "{P:" ++ stringifyNameGlobal n ++ ":" ++ show d ++ "}"
@@ -134,7 +134,7 @@ stringifyNameGlobal (WithBlock outer i) = "with[" ++ show i ++ "]" ++ outer
 stringifyNameGlobal (Resolved x) = "$resolved" ++ show x
 
 stringifyNameMangle : Name -> String
-stringifyNameMangle (NS ns n) = join "_" (validateIdentifier <$> reverse ns) ++ "_" ++ stringifyNameMangle n
+stringifyNameMangle (NS ns n) = (validateIdentifier $ show ns) ++ "_" ++ stringifyNameMangle n
 stringifyNameMangle (UN x) = validateIdentifier x
 stringifyNameMangle (MN x y) = "__" ++ (validateIdentifier x) ++ show y
 stringifyNameMangle (PV n d) = "pat__" ++ stringifyNameMangle n ++ "_" ++ show d
@@ -665,22 +665,49 @@ mkCase branches mbElse =
     pure (blockA, local)
 
 
-mutual 
+mutual -- TODO try remove in favour of forward declarions ?
 
+  uninhabNS : Namespace
+  uninhabNS = preludeNS <.> mkNamespace "Uninhabited"
+
+  iorefNS : Namespace
+  iorefNS = mkNamespace "Data" <.> mkNamespace "IORef"
+
+  stringsNS : Namespace
+  stringsNS = mkNamespace "Data" <.> mkNamespace "Strings"
+
+  arrayNS : Namespace
+  arrayNS = mkNamespace "Data" <.> mkNamespace "IOArray" <.> mkNamespace "Prims"
+
+  systemNS : Namespace
+  systemNS = mkNamespace "System"
+
+  infoNS : Namespace
+  infoNS = mkNamespace "System" <.> mkNamespace "Info"
+
+  ioNS : Namespace
+  ioNS = preludeNS <.> mkNamespace "IO"
 
   extNames : List Name
-  extNames = [NS ["IORef", "Data"] (UN "prim__newIORef")
-             ,NS ["IORef", "Data"] (UN "prim__readIORef")
-             ,NS ["IORef", "Data"] (UN "prim__writeIORef")
-             ,NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")
-             ,NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")
-             ,NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")
-             ,NS ["Info", "System"] (UN "prim__os")
-             ,NS ["Uninhabited", "Prelude"] (UN "void")] --TODO add other implemented names
+  extNames = [mkNamespacedName (Just iorefNS) "prim__newIORef"
+             ,mkNamespacedName (Just iorefNS) "prim__readIORef"
+             ,mkNamespacedName (Just iorefNS) "prim__writeIORef"
+             ,mkNamespacedName (Just arrayNS) "prim__newArray"
+             ,mkNamespacedName (Just arrayNS) "prim__arrayGet"
+             ,mkNamespacedName (Just arrayNS) "prim__arraySet"
+             ,mkNamespacedName (Just infoNS) "prim__os"
+             ,mkNamespacedName (Just uninhabNS) "void"] --TODO add other implemented names
+
+  foreignImpls : List Name
+  foreignImpls = [ mkNamespacedName (Just preludeNS) "prim__putStr"
+                 , mkNamespacedName (Just preludeNS) "prim__getStr"
+                 , mkNamespacedName (Just systemNS) "prim__getArgs"
+                 , mkNamespacedName (Just stringsNS) "fastConcat"
+                 , mkNamespacedName (Just typesNS) "fastPack"
+                 ]
 
   --fully applied external name
   --can be inlined
-  --THIS IS NOT A DEFINITION !
   processExtCall : 
          {auto stack : Ref Stack StackSt}
       -> {auto frame : StackFrame}
@@ -688,69 +715,93 @@ mutual
       -> Name
       -> List NamedCExp
       -> Core LuaBlock
-  processExtCall (NS ["IORef", "Data"] (UN "prim__newIORef")) [_, v, _] =
-    do
-      (blockA, v) <- processExpr v
-      pure (blockA, LTable [(LString "val", v)])
-  processExtCall (NS ["IORef", "Data"] (UN "prim__readIORef")) [_, r, _] =
-    do
-      (blockA, r) <- processExpr r
-      pure (blockA, LIndex r (LString "val"))
-  processExtCall (NS ["IORef", "Data"] (UN "prim__writeIORef")) [_, r, v, _] = 
-    do
-      (blockA, r) <- processExpr r
-      (blockB, v) <- processExpr v
-      pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [(LString "tag", LString "0")] {-Unit-})
-  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__newArray")) [_, len, init, _] = 
-    do
-      (blockA, len) <- processExpr len
-      (blockB, init) <- processExpr init
-      table <- pushLocal
-      counter <- pushLocal
-      let loop = LWhile  
-               (LPrimFn (LTE IntType) [counter, len]) $
-               (LAssign Nothing (LIndex table counter) init)
-               <+> (LAssign Nothing counter (LPrimFn (Add IntType) [counter, LNumber "1"]))
-      pure (blockA <+> blockB <+> LAssign Nothing table (LTable []) 
-            <+> LAssign Nothing counter (LNumber "1") <+> loop, table)  
-  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__arrayGet")) [_, ar, i, _] =
-    do
-      (blockA, ar) <- processExpr ar
-      (blockB, i) <- processExpr i
-      pure (blockA <+> blockB, LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
-  processExtCall (NS ["Prims", "IOArray", "Data"] (UN "prim__arraySet")) [_, ar, i, v, _] = 
-    do
-      (blockA, ar) <- processExpr ar
-      (blockB, i) <- processExpr i
-      (blockC, v) <- processExpr v
-      pure ( blockA
-              <+> blockB
-              <+> blockC
-              <+> LAssign Nothing
-                          (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
-                          v
-           , LTable [(LString "tag", LString "0")] {-Unit-})
-  processExtCall name@(NS ["Info", "System"] (UN "prim__os")) args =
-    do
-      args' <- traverse processExpr args
-      let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LGVar name) args) --defined in support file
-  processExtCall name@(NS ["Uninhabited", "Prelude"] (UN "void")) args = 
-    do
-      args' <- traverse processExpr args
-      let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LGVar name) args) --defined in support file
-  processExtCall name@(NS ["IO", "Prelude"] (UN "prim__onCollectAny")) args = 
-    do
-      args' <- traverse processExpr args
-      let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LGVar name) args) --defined in support file
-  processExtCall name@(NS ["IO", "Prelude"] (UN "prim__onCollect")) args = 
-    do
-      args' <- traverse processExpr args
-      let (blockA, args) = unzip args'
-      pure (concat blockA, LApp (LGVar name) args) --defined in support file
-  processExtCall prim _ = throw $ InternalError $ "external primitive not implemented: " ++ show prim
+  processExtCall name@(NS ns (UN n)) args =
+    condC [
+            ( pure $ ns == iorefNS
+            ,
+              case (n, args) of
+                   ("prim__newIORef", [_, v, _]) =>
+                      do (blockA, v) <- processExpr v
+                         pure (blockA, LTable [(LString "val", v)])
+                   ("prim__readIORef", [_, r, _]) =>
+                      do
+                        (blockA, r) <- processExpr r
+                        pure (blockA, LIndex r (LString "val"))
+                   ("prim__writeIORef", [_, r, v, _]) =>
+                      do
+                        (blockA, r) <- processExpr r
+                        (blockB, v) <- processExpr v
+                        pure (blockA <+> blockB <+> LAssign Nothing (LIndex r (LString "val")) v, LTable [(LString "tag", LString "0")] {-Unit-})
+                   _ => notDefined )
+            ,
+            ( pure $ ns == arrayNS
+            , case (n, args) of
+                   ("prim__newArray", [_, len, init, _]) =>
+                      do
+                        (blockA, len) <- processExpr len
+                        (blockB, init) <- processExpr init
+                        table <- pushLocal
+                        counter <- pushLocal
+                        let loop = LWhile
+                                 (LPrimFn (LTE IntType) [counter, len]) $
+                                 (LAssign Nothing (LIndex table counter) init)
+                                 <+> (LAssign Nothing counter (LPrimFn (Add IntType) [counter, LNumber "1"]))
+                        pure (blockA <+> blockB <+> LAssign Nothing table (LTable [])
+                              <+> LAssign Nothing counter (LNumber "1") <+> loop, table)
+                   ("prim__arrayGet", [_, ar, i, _]) =>
+                      do
+                        (blockA, ar) <- processExpr ar
+                        (blockB, i) <- processExpr i
+                        pure (blockA <+> blockB, LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
+                   ("prim__arraySet", [_, ar, i, v, _]) =>
+                      do
+                        (blockA, ar) <- processExpr ar
+                        (blockB, i) <- processExpr i
+                        (blockC, v) <- processExpr v
+                        pure ( blockA
+                                <+> blockB
+                                <+> blockC
+                                <+> LAssign Nothing
+                                            (LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
+                                            v
+                             , LTable [(LString "tag", LString "0")] {-Unit-})
+                   _ => notDefined )
+             ,
+             ( pure $ ns == infoNS
+             , case n of
+                    "prim__os" =>
+                       do
+                         args' <- traverse processExpr args
+                         let (blockA, args) = unzip args'
+                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                    _ => notDefined )
+             ,
+             ( pure $ ns == uninhabNS
+             , case n of
+                    "void" =>
+                       do
+                         args' <- traverse processExpr args
+                         let (blockA, args) = unzip args'
+                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                    _ => notDefined )
+             ,
+             ( pure $ ns == ioNS
+             , case n of
+                    "prim__onCollectAny" =>
+                       do
+                         args' <- traverse processExpr args
+                         let (blockA, args) = unzip args'
+                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                    "prim__onCollect" =>
+                       do
+                         args' <- traverse processExpr args
+                         let (blockA, args) = unzip args'
+                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                    _ => notDefined ) ] notDefined
+  where
+    notDefined : Core a
+    notDefined          = throw $ InternalError $ "external primitive not implemented: " ++ show name
+  processExtCall name _ = throw $ InternalError $ "external primitive not implemented: " ++ show name
 
 
    
@@ -784,38 +835,31 @@ mutual
        -> List CFType
        -> CFType
        -> Core ()
-  processForeignDef name@(NS ["Prelude"] (UN "prim__putStr")) hints argtys retty =
-    pure ()
-  processForeignDef name@(NS ["Prelude"] (UN "prim__getStr")) hints argtys retty =
-    pure ()
-  processForeignDef name@(NS ["System"] (UN "prim__getArgs")) hints argtys retty =
-    pure ()
-  processForeignDef name@(NS ["Strings", "Data"] (UN "fastConcat")) hints argtys retty =
-    pure ()
-  processForeignDef name@(NS ["Types", "Prelude"] (UN "fastPack")) hints argtys retty =
-    pure ()
-  processForeignDef name hints argtys retty = do --TODO refine this, use special namespace (table) for userdefined assignments
-      let ((def, maybeReq), replace) 
-          = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
-      log logTopic 2 $ "using %foreign " ++ def
-      case maybeReq of
-           (Just pack) => do 
-                         log logTopic 2 $ "requiring " ++ pack
-                         addDefToPreamble 
-                          ("$" ++ pack) 
-                           ((stringifyName Global (UN pack)) ++ " = require('" ++ pack ++ "')")
-                            True -- its ok to require the same package multiple times, ignore all but first
+  processForeignDef name hints argtys retty =
+   case find (== name) foreignImpls of
+        Just _ => pure () -- implemented internally
+        Nothing =>
+           do --TODO refine this, use special namespace (table) for userdefined assignments
+              let ((def, maybeReq), replace)
+                  = ((\x => (x, True)) <$> (searchForeign hints)).orElse ((stringifyName Global name, Nothing), False)
+              log logTopic 2 $ "using %foreign " ++ def
+              case maybeReq of
+                   (Just pack) => do
+                                 log logTopic 2 $ "requiring " ++ pack
+                                 addDefToPreamble
+                                  ("$" ++ pack)
+                                   ((stringifyName Global (UN pack)) ++ " = require('" ++ pack ++ "')")
+                                    True -- its ok to require the same package multiple times, ignore all but first
 
-                                                             -- '$' makes sure all require statements
-                                                             -- are above assingnments using them
-           Nothing => pure ()
-      
-      if replace then do
-            let strname = stringifyName Global name    
-            addDefToPreamble strname (strname ++ " = " ++ def) False
-            pure () 
-         else
-            pure ()
+                                                                     -- '$' makes sure all require statements
+                                                                     -- are above assingnments using them
+                   Nothing => pure ()
+              if replace then do
+                    let strname = stringifyName Global name
+                    addDefToPreamble strname (strname ++ " = " ++ def) False
+                    pure ()
+                 else
+                    pure ()
 
   processPrimCmp : 
          {auto stack : Ref Stack StackSt} 
@@ -1107,7 +1151,7 @@ translate defs term = do
   let con_cdefs = concat cdefs
   --TODO tail call optimization
   frame <- pushFrame
-  (block, main) <- processExpr {frame = frame} ctm
+  (block, main) <- processExpr {frame} ctm
   vars <- popFrame
   let frameTable = declFrameTable frame vars
   clock4 <- coreLift $ clockTime Monotonic
@@ -1200,10 +1244,6 @@ execute defs tmpDir term = do
 luaCodegen : Codegen
 luaCodegen = MkCG compile execute
 
-
 export
 main : IO ()
 main = mainWithCodegens [("lua", luaCodegen)]
-
-
-
