@@ -8,19 +8,19 @@ import Data.Vect
 %hide Core.TT.Visibility
 
 public export
-data Visibility = Local 
+data Visibility = Local
                 | Global
 
 
-export 
+export
 Eq Visibility where
  (==) Local Local = True
  (==) Global Global = True
  (==) _ _ = False
 
 
-public export 
-data LuaExpr = LLVar Name
+public export
+data LuaExpr =  LLVar Name
               | LGVar Name --TODO add ability to index globals other than `idris`
               | LLambda (List Name) LuaExpr
               | LApp LuaExpr (List LuaExpr)
@@ -38,7 +38,7 @@ data LuaExpr = LLVar Name
               | LReturn LuaExpr
               | LAssign (Maybe Visibility) LuaExpr LuaExpr  --decl with initial val and reassignment
               | LDeclVar Visibility Name
-              | LIfThenElse LuaExpr LuaExpr LuaExpr 
+              | LIfThenElse LuaExpr LuaExpr LuaExpr
               | LBreak
               | LWhile LuaExpr LuaExpr
               | LDoNothing
@@ -56,7 +56,7 @@ Monoid LuaExpr where
 
 public export
 primFnNames : List String
-primFnNames = 
+primFnNames =
    ["prim__cast_IntChar"
    ,"prim__cast_IntegerDouble"
    ,"prim__cast_IntDouble"

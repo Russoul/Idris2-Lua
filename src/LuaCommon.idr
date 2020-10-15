@@ -9,37 +9,33 @@ import Data.Vect
 import Data.List
 import Data.Buffer
 import Utils.Hex
-infixr 1 <<=
 
-export
-swap : (a -> b -> c) -> b -> a -> c
-swap f x y = f y x
+infixl 100 |>
 
-export
-(<<=) : (Monad m) => (a -> m b) -> (m a) -> m b
-(<<=) = swap (>>=)
-
+public export
+(|>) : a -> (a -> b) -> b
+x |> f = f x
 
 public export
 data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
 
 namespace Strings
    public export
-   ||| replaces all occurances of literal @lit 
-   ||| in string @str 
-   removeAll : 
-         (lit : String) 
+   ||| replaces all occurances of literal @lit
+   ||| in string @str
+   removeAll :
+         (lit : String)
       -> (str : String)
       -> String
-   removeAll lit str with (str == "") 
-      removeAll lit str | False =  
+   removeAll lit str with (str == "")
+      removeAll lit str | False =
          if isPrefixOf lit str
             then removeAll lit (substr (length lit) (length str `minus` length lit) str)
             else case strUncons str of
                       Just (head, rest) => strCons head (removeAll lit rest)
                       Nothing => ""
-      removeAll lit str | True = "" 
-         
+      removeAll lit str | True = ""
+
 
 namespace LuaVersion
 
@@ -57,7 +53,7 @@ namespace LuaVersion
    fromIndex 53 = Just Lua53
    fromIndex 54 = Just Lua54
    fromIndex _  = Nothing
-   
+
    export
    Eq LuaVersion where
       Lua51 == Lua51 = True
@@ -68,13 +64,13 @@ namespace LuaVersion
 
    export
    Show LuaVersion where
-      show ver = 
+      show ver =
        let index = index ver
            major = index `div` 10
            minor = index `mod` 10
        in
            "Lua" ++ show major ++ "." ++ show minor
-   
+
    export
    Ord LuaVersion where
       compare v v' = compare (index v) (index v')
@@ -86,15 +82,15 @@ namespace LuaVersion
    parseLuaVersion str = helper ((trim . toLower) str)
    where
       helper : String -> Maybe LuaVersion
-      helper x = 
-         let noprefix = 
+      helper x =
+         let noprefix =
                 if isPrefixOf "lua" x
                   then drop 3 x
                   else x
              nodots = removeAll "." noprefix
              nodashes = removeAll "-" nodots
              firstTwo = take 2 nodashes
-         in      
+         in
              do int <- parseInteger {a = Int} firstTwo
                 fromIndex int
 
@@ -103,10 +99,10 @@ namespace LuaVersion
 namespace Data.List
   export
   unzip : (xs : List (a, b)) -> (List a, List b)
-  unzip ((l, r) :: xs) = 
+  unzip ((l, r) :: xs) =
     let (ls, rs) = unzip xs in
         (l :: ls, r :: rs)
-  unzip [] = ([], [])      
+  unzip [] = ([], [])
 
 namespace Data.Maybe
   export
@@ -166,15 +162,15 @@ validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
       validate s | True = "_uni_" ++ cast (ord s) ++ "_"
 
     validateKeyword : String -> String
-    validateKeyword mbkw = 
+    validateKeyword mbkw =
        case find (== mbkw) luaKeywords of
           Just kw => "_kw_" ++ kw ++ "_"
           Nothing => mbkw
 
 public export
 parseEnvBool : String -> Maybe Bool
-parseEnvBool str = 
-   case str.toLower of
+parseEnvBool str =
+   case toLower str of
       "true" => Just True
       "1" => Just True
       "false" => Just False
@@ -213,21 +209,21 @@ record StrBuffer where
    get : Buffer
    offset : Int
 
-export 
+export
 allocStrBuffer : Int -> Core StrBuffer
-allocStrBuffer initialSize = 
+allocStrBuffer initialSize =
    do
       (Just buf) <- coreLift $ newBuffer initialSize
          | _ => throw (UserError "Could not allocate buffer")
       pure (MkStrBuffer buf 0)
 
 export
-writeStr : 
+writeStr :
       (marker : Type)
    -> {auto buf : Ref marker StrBuffer}
    -> String
    -> Core ()
-writeStr marker str = 
+writeStr marker str =
    do
       let strlen = stringByteLength str
       strbuf <- get marker
@@ -238,14 +234,14 @@ writeStr marker str =
 
    where
       ensureSize : Buffer -> Int -> Int -> Core Buffer
-      ensureSize buf offset strlen = 
+      ensureSize buf offset strlen =
          let bufLen = !(coreLift $ rawSize buf) in
              if offset + strlen > bufLen
                 then do
                    (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
                      | _ => throw (UserError "Could not allocate buffer")
-                   pure buf  
-             else      
+                   pure buf
+             else
                 pure buf
 
 public export
@@ -275,7 +271,7 @@ namespace DeferedStr
 --it is actually more general than that, but whatever
 export
 trimQuotes : String -> String
-trimQuotes x = substr 1 (x.length `minus` 2) x
+trimQuotes x = substr 1 (length x `minus` 2) x
 
 
 export

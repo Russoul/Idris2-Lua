@@ -25,6 +25,8 @@ chezTests
       "chez025", {- "chez026 ???" -} "chez027",
       "reg001"]
 
+luaTests : List String
+luaTests = ["lua001"]
 
 ------------------------------------------------------------------------
 -- Options
@@ -156,7 +158,7 @@ firstExists (x :: xs) = if !(exists x) then pure (Just x) else firstExists xs
 pathLookup : List String -> IO (Maybe String)
 pathLookup names = do
   path <- getEnv "PATH"
-  let pathList = List1.toList $ split (== pathSeparator) $ fromMaybe "/usr/bin:/usr/local/bin" path
+  let pathList = List1.forget $ split (== pathSeparator) $ fromMaybe "/usr/bin:/usr/local/bin" path
   let candidates = [p ++ "/" ++ x | p <- pathList,
                                     x <- names]
   firstExists candidates
@@ -186,14 +188,15 @@ main
          let (Just opts) = options args
               | _ => do print args
                         putStrLn usage
-                        
+
          let filteredNonCGTests =
               filterTests opts $ concat $ the (List _) [
-                  testPaths "chez" chezTests
+                   testPaths "chez" chezTests
+                 , testPaths "lua" luaTests
                  ]
 
          res <- runLuaTests opts $ filteredNonCGTests
-              
+
          putStrLn (show (length (filter id res)) ++ "/" ++ show (length res)
                        ++ " tests successful")
          if (any not res)
