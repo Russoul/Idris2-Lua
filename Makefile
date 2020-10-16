@@ -9,7 +9,7 @@ IPKG = idris2-lua.ipkg
 
 MAJOR=0
 MINOR=2
-PATCH=0
+PATCH=1
 
 
 export IDRIS2_VERSION := ${MAJOR}.${MINOR}.${PATCH}
@@ -39,6 +39,7 @@ clean:
 	$(RM) -r build
 	$(RM) support/lua/*.so
 	$(RM) support/lua/*.o
+	$(RM) -r tests/build
 
 install: install-idris2-lua install-support 
 
@@ -57,7 +58,7 @@ install-support: check-env
 	luarocks make --lua-version=$(LuaVersion) 
 	install support/lua/idris2-lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 
-test:
+test: install-support
 	make -C tests IDRIS2_LUA=../${TARGET}
 
 
