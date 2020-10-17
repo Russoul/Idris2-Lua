@@ -9,20 +9,26 @@ Lua backend for Idris 2
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
 - Target Lua versions: 5.1, 5.2, 5.3, 5.4 (not tested, but planned), Luajit
 - Depends on [lua-utf8](https://github.com/starwing/luautf8.git), [lua-bigint](https://github.com/JorjBauer/lua-bigint.git),
-  [lfs](https://keplerproject.github.io/luafilesystem/manual.html) and [vstruct](https://github.com/ToxicFrog/vstruct)
-- Also the backend can be used in compatibility mode: create a global variable `NoRequire` and set it to `true` before you compile to Lua.
-  Above libraries won't be required to run your code after that, but you won't be able to use their functionality though.
-  This means `Integer`, file IO, buffers and possibly other things won't work (You will have to pass `--no-prelude` to Idris,
-  as `prelude` uses at least `Integer`)
-  
-  
-  All libraries can be installed via [*luarocks*](https://luarocks.org):
-  
-  `luarocks install luautf8 && luarocks install bigint`
+  [lfs](https://keplerproject.github.io/luafilesystem/manual.html), [vstruct](https://github.com/ToxicFrog/vstruct) and
+  [inspect](https://github.com/kikito/inspect.lua) (tests only)
 
-  `luarocks install luafilesystem && luarocks install vstruct`
+  
+  
+#### All libraries can be installed via [*luarocks*](https://luarocks.org):
+  
+  ```
+  luarocks install luautf8 && luarocks install bigint
+  luarocks install luafilesystem && luarocks install vstruct
+  luarocks install inspect
+  ```
+  
+  Before you proceed, fill in `LuaVersion` and `LuaExe` environmental variables with a desired Lua version and a name of the executable file for that version.
+  
+#### Build, test and install:
   
   `make all && make install`
+  
+  Idris 2 REPL preconfigured with `lua` codegen will be available under the name `idris2-lua` located in the same folder as your `idris2` executable.
   
 ## Status
  - Backend can build Idris 2 itself into one single Lua executable (source) 
@@ -53,3 +59,7 @@ Lua backend for Idris 2
    Also, if you use Buffers maximum precision is 48 bits !
    Disregarding the Lua version ! This is planned to be fixed moving to native buffers
  - Bits8, Bits16, Bits32, Bits64 are not yet implemented
+ - Also the backend can be used in compatibility mode: create a global variable `NoRequire` and set it to `true` (or `1`) before you compile to Lua.
+   Above libraries won't be required to run your code after that, but you won't be able to use their functionality though.
+   This means `Integer`, file IO, buffers and possibly other things won't work (You will have to pass `--no-prelude` to Idris,
+   as `prelude` uses at least `Integer`)
