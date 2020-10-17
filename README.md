@@ -1,5 +1,4 @@
-# Idris2-Lua
-Lua backend for Idris 2
+# Lua backend for Idris 2
 
 ## Precautions
 - This this WIP, expect bugs or undocumented behavior. If you find yourself struggling to install or use the backend
