@@ -30,17 +30,17 @@ function idris.addenv(key, val)
       setfenv(1, env)
    else
       _ENV[key] = val
-   end   
-end   
+   end
+end
 
 function idris.getenv(key)
    if idris.luaVersion < 52 then
      return getfenv()[key]
    else
      return _ENV[key]
-   end 
-end 
-                                           
+   end
+end
+
 local abs = math.abs
 local modf = math.modf
 function idris.getBit32()
@@ -61,28 +61,28 @@ function idris.getToInteger()        --behaviour of math.tointeger of lua 5.3 (r
             return nil
          else
             return int
-         end     
+         end
       end
    else
       return math.tointeger
    end
-end 
+end
 
 function idris.getReadLineString()
    if idris.luaVersion <= 52 then
       return "*l"
    else
       return "l"
-   end     
-end 
+   end
+end
 
 function idris.getUnpack()
    if idris.luaVersion == 51 then
       return unpack
    else
       return table.unpack
-   end     
-end 
+   end
+end
 
 function idris.getOnCollectAny()
    if idris.luaVersion == 51 then
@@ -99,7 +99,7 @@ function idris.getOnCollectAny()
 end
 function idris.getOnCollect()
    if idris.luaVersion == 51 then
-      return 
+      return
          function(ty, ptr, f) error("prim__onCollect not implemented for Lua 5.1") end
    else
       return function (ty, ptr, f)
@@ -147,14 +147,14 @@ local max = math.max
 --         exp = exp - one
 --      end
 --      return k
--- end   
+-- end
 
 function bigint.abs(x)
    if x >= bigint:new(0) then
       return bigint:new(x)
    else
       return -x
-   end   
+   end
 end
 
 function bigint.numd2(x)
@@ -164,9 +164,9 @@ function bigint.numd2(x)
    while x > zero do
       n = n + 1
       x = x:shiftright(1)
-   end   
+   end
    return n
-end   
+end
 
 function idris.bandbi(a, b)
    local a = bigint:new(a)
@@ -183,7 +183,7 @@ function idris.bandbi(a, b)
    if a < zero then
       a = tp + a
       sa = 1
-   end   
+   end
    if b < zero then
       b = tp + b
       sb = 1
@@ -204,8 +204,8 @@ function idris.bandbi(a, b)
       return r
    else
       return -(tp - r)
-   end   
-end 
+   end
+end
 
 function idris.borbi(a, b)
    local a = bigint:new(a)
@@ -222,7 +222,7 @@ function idris.borbi(a, b)
    if a < zero then
       a = tp + a
       sa = 1
-   end   
+   end
    if b < zero then
       b = tp + b
       sb = 1
@@ -244,8 +244,8 @@ function idris.borbi(a, b)
       return r
    else
       return -(tp - r)
-   end   
-end 
+   end
+end
 
 function idris.bxorbi(a, b)
    local a = bigint:new(a)
@@ -262,7 +262,7 @@ function idris.bxorbi(a, b)
    if a < zero then
       a = tp + a
       sa = 1
-   end   
+   end
    if b < zero then
       b = tp + b
       sb = 1
@@ -282,8 +282,8 @@ function idris.bxorbi(a, b)
       return r
    else
       return -(tp - r)
-   end   
-end 
+   end
+end
 
 ---------------------------------
 ---------- Basic stuff ----------
@@ -296,10 +296,21 @@ function idris.fastConcatImpl(list, buffer)
       local c = list.arg1
       buffer[#buffer + 1] = c
       return idris.fastConcatImpl(list.arg2, buffer) --tail call
-   end   
+   end
 end
-idris.fastConcat = function(args) return idris.fastConcatImpl(args, {}) end --impl of fastConcat
+
+function idris.fastUnpackImpl(str, i, chars)
+   if i == 0 then
+      return chars
+   else
+      return idris.fastUnpackImpl(str, i - 1, {tag = "1", arg2 = chars, arg1 = utf8.sub(str, i, i)})
+   end
+end
+
+idris.fastConcat = function(args) return idris.fastConcatImpl(args, {}) end -- impl of fastConcat
+idris.fastUnpack = function(str) return idris.fastUnpackImpl(str, utf8.len(str), {tag = "0"}) end -- impl of fastUnpack
 idris["Data.Strings.fastConcat"] = idris.fastConcat
+idris["Data.Strings.fastUnpack"] = idris.fastUnpack
 idris["Prelude.Types.fastPack"] = idris.fastConcat
 
 function idris.mkPtr(val)
@@ -311,8 +322,8 @@ idris["PrimIO.prim__nullAnyPtr"] = function(ptr)
       return 1
    else
       return 0
-   end   
-end   
+   end
+end
 
 idris["Prelude.IO.prim__onCollectAny"] = idris.onCollectAny
 idris["Prelude.IO.prim__onCollect"] = idris.onCollect
@@ -332,12 +343,12 @@ idris["Prelude.IO.prim__getChar"] = function(world)
       return res
    else
       return ""
-   end   
+   end
 end
 
 idris["Prelude.IO.prim__putStr"] = function(str, world)
    io.stdout:write(str)
-end   
+end
 
 --trims new line
 idris["Prelude.IO.prim__getStr"] = function(world)
@@ -346,13 +357,13 @@ idris["Prelude.IO.prim__getStr"] = function(world)
       return res
    else
       return ""
-   end     
+   end
 end
 
 idris["System.prim__system"] = function(cmd)
    local success, typ, code = os.execute(cmd)
    return code
-end   
+end
 
 --------------------------------------------------------
 ----------------------  LFS ----------------------------
@@ -365,13 +376,13 @@ idris["System.Directory.prim__changeDir"] = function(d)
       return 0
    else
       return 1
-   end   
-end   
+   end
+end
 
 idris["System.Directory.prim__currentDir"] = function()
    local cwd, errstr = lfs.currentdir()
    return idris.mkPtr(cwd)
-end   
+end
 
 idris["System.Directory.prim__createDir"] = function(d)
    local ok, errmsg = lfs.mkdir(d)
@@ -380,8 +391,8 @@ idris["System.Directory.prim__createDir"] = function(d)
    else
       if errmsg == "File exists" then idris.last_file_err = 4 end
       return 1
-   end   
-end   
+   end
+end
 
 idris["System.Directory.prim__removeDir"] = function(d)
    local ok, errmsg, errno = lfs.rmdir(d)
@@ -390,16 +401,16 @@ idris["System.Directory.prim__removeDir"] = function(d)
    else
       if errno then idris.last_file_err = errno end
       return 1
-   end   
-end   
+   end
+end
 
 idris["System.Directory.prim__openDir"] = function(d)
    local ok, iter, dir = pcall(lfs.dir, d)
    if ok then
       return idris.mkPtr(dir)
    else
-      return null 
-   end   
+      return null
+   end
 end
 
 idris["System.Directory.prim__closeDir"] = function(ptr)
@@ -414,12 +425,12 @@ idris["System.Directory.prim__dirEntry"] = function(ptr)
    else
       if code then idris.last_file_err = code end
       return null
-   end   
-end   
+   end
+end
 
 idris["System.Directory.prim__fileErrno"] = function()
    return idris.last_file_err
-end   
+end
 
 --------------------------------------------------------
 ---------------------- FILE IO -------------------------
@@ -442,7 +453,7 @@ idris["System.File.prim__open"] = function(name, mode)
       return idris.mkPtr({handle=f, path=name})
    else
       return null
-   end   
+   end
 end
 
 idris["System.File.prim__close"] = function(file)
@@ -465,11 +476,11 @@ function idris.readFile(file, ty)
    else
       if line then
          return idris.mkPtr(line)
-      else   
+      else
          return idris.mkPtr("")  --nothing to read, return empty string
                                  --Idris behaviour
       end
-   end   
+   end
 end
 
 idris["System.File.prim__readLine"] = function(file)
@@ -480,7 +491,7 @@ idris["System.File.prim__readLine"] = function(file)
       else return idris.mkPtr(ptr.deref) --[[ no EOL in case we hit EOF --]] end
    else
       return null
-   end     
+   end
 end
 
 idris["System.File.prim__readChars"] = function(n, file)
@@ -503,7 +514,7 @@ idris["System.File.prim__writeLine"] = function(file, line)
 end
 
 idris["System.File.prim__eof"] = function(file)
-   if idrisn.feof(file.deref.handle) == 0 then return 0 --[[ no EOF --]] else return 1 --[[ EOF --]] end 
+   if idrisn.feof(file.deref.handle) == 0 then return 0 --[[ no EOF --]] else return 1 --[[ EOF --]] end
 end
 
 idris["System.File.prim__flush"] = function(file)
@@ -515,7 +526,7 @@ end
 idris["System.File.prim__removeFile"] = function(name)
    local ok, err, code = os.remove(name)
    idris.updateFileError(err, code)
-   if ok then return 0 else return code end 
+   if ok then return 0 else return code end
 end
 
 idris["System.File.prim__fileSize"] = function(file)
@@ -527,7 +538,7 @@ idris["System.File.prim__fileSize"] = function(file)
       return bytes
    else
       error("Failed getting file size for " .. file.deref.path)
-   end   
+   end
 end
 
 idris["System.File.prim__fPoll"] = function(file)
@@ -551,20 +562,20 @@ idris["System.File.prim__fileStatusTime"] = function(file)
       return ok
    else
       return 0
-   end   
+   end
 end
 
-idris["System.File.prim__stdin"] = function() 
+idris["System.File.prim__stdin"] = function()
    return idris.mkPtr({handle=io.stdin, path="$stdin"})
-end   
+end
 
-idris["System.File.prim__stdout"] = function() 
+idris["System.File.prim__stdout"] = function()
    return idris.mkPtr({handle=io.stdout, path="$stdout"})
-end   
+end
 
-idris["System.File.prim__stderr"] = function() 
+idris["System.File.prim__stderr"] = function()
    return idris.mkPtr({handle=io.stderr, path="$stderr"})
-end   
+end
 
 idris["System.File.prim__chmod"] = function(path, mod)
    local exit, code = os.execute("chmod " .. string.format("%o", mod) .. " " .. path)
@@ -727,16 +738,16 @@ function idris.getArgsImpl(i)
       return {tag = "1", arg1 = arg[i], arg2 = idris.getArgsImpl(i + 1)}
    else
       return {tag = "0"}
-   end     
+   end
 end
 
 idris["System.prim__getArgs"] = function()
-   return idris.getArgsImpl(0)   
+   return idris.getArgsImpl(0)
 end
 
 idris["Prelude.Uninhabited.void"] = function(ty, void)
    return "%FromVoid"
-end   
+end
 
 --TODO uname may not work correctly if ulimit -Sn <num> is not set to higher number ...
 function idris.getOS()
@@ -756,8 +767,8 @@ function idris.getOS()
             -- Unix-based OS
             raw_os_name = io.popen('uname -s'):read(idris.readl)
          end
-      end   
-     end   
+      end
+     end
    if not raw_os_name then raw_os_name = "unknown" end
    raw_os_name = raw_os_name:lower()
 
@@ -771,7 +782,7 @@ function idris.getOS()
       ['bsd$'] = 'bsd',
       ['SunOS'] = 'solaris',
    }
-   
+
 
    local os_name = 'unknown'
 
@@ -786,7 +797,7 @@ end
 
 idris["System.Info.prim__os"] = function()
    return idris.getOS()
-end   
+end
 
 function idris.ifThenElse(cond, ifTrue, ifFalse)
    local r

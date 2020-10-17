@@ -2,8 +2,9 @@ import Data.HVect
 
 -- Signature of a %foreign hint:
 -- definition|require1(renameRequire1), require2(renameRequire2), ...
+-- prefix 'lua:' is optional if there is only one %foreign hint
 
-%foreign "function () end|inspect, extra"
+%foreign "lua:function () end|inspect, extra"
 imports : PrimIO ()
 
 -- This function does nothing at runtime

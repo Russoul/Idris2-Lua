@@ -5,7 +5,7 @@ IDRIS2_LUA ?= ../build/exec/idris2-lua
 .PHONY: testbin test
 
 test:
-	$(IDRIS2) --build tests.ipkg && ./build/exec/runtests ../../$(IDRIS2_LUA) $(INTERACTIVE) --only $(only)
+	$(IDRIS2) --build tests.ipkg && ./build/exec/runtests ../../$(IDRIS2_LUA) $(INTERACTIVE) --cg lua --only $(only)
 
 clean:
 	$(RM) -r build

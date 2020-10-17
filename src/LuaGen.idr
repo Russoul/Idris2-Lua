@@ -713,6 +713,7 @@ mutual -- TODO try remove in favour of forward declarions ?
                  , mkNamespacedName (Just preludeNS) "prim__getStr"
                  , mkNamespacedName (Just systemNS) "prim__getArgs"
                  , mkNamespacedName (Just stringsNS) "fastConcat"
+                 , mkNamespacedName (Just stringsNS) "fastUnpack"
                  , mkNamespacedName (Just typesNS) "fastPack"
                  ]
 
@@ -855,13 +856,15 @@ mutual -- TODO try remove in favour of forward declarions ?
                   (x :: xs) => searchForeign' (x ::: xs)
                   [] => Nothing
 
-  -- If there is only one hint line, assume its not prefixed with 'lua:'
-  -- If there are multiple (it is hardly possible) find a line prefixed with 'lua:'
+  -- If there is only one hint line, prefix 'lua:' can be skipped
+  -- If there are multiple, find a line prefixed with 'lua:'
   searchForeign : List String -> Maybe (String, Maybe (List (String, String)))
   searchForeign [] = Nothing
   searchForeign (a :: b :: xs) = searchForeign' (a ::: (b :: xs))
   searchForeign [def] =
-    let (def, req) = break (== '|') def in
+    let def = trim def
+        def = if isPrefixOf "lua:" def then trim (strSubstr 4 (cast $ length def) def) else def
+        (def, req) = break (== '|') def in
         Just (def, if req == "" then Nothing else Just $ processRequire $ drop 1 req)
 
   --Foreign definition

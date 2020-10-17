@@ -26,7 +26,7 @@ chezTests
       "reg001"]
 
 luaTests : List String
-luaTests = ["lua001"]
+luaTests = ["lua001", "lua002"]
 
 ------------------------------------------------------------------------
 -- Options
@@ -36,6 +36,8 @@ record Options where
   constructor MkOptions
   ||| Name of the idris2 executable
   idris2      : String
+  ||| Name of the codegenerator to use for `exec`
+  codegen     : Maybe String
   ||| Should we only run some specific cases?
   onlyNames   : List String
   ||| Should we run the test suite interactively?
@@ -46,7 +48,7 @@ usage = "Usage: runtests <idris2 path> [--interactive]"
 
 options : List String -> Maybe Options
 options args = case args of
-    (_ :: idris2 :: rest) => go rest (MkOptions idris2 [] False)
+    (_ :: idris2 :: rest) => go rest (MkOptions idris2 Nothing [] False)
     _ => Nothing
 
   where
@@ -55,6 +57,7 @@ options args = case args of
     go rest opts = case rest of
       []                      => pure opts
       ("--interactive" :: xs) => go xs (record { interactive = True } opts)
+      ("--cg" :: cg :: xs)    => go xs (record { codegen = Just cg } opts)
       ("--only" :: xs)        => pure $ record { onlyNames = xs } opts
       _ => Nothing
 
