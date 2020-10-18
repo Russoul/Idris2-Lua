@@ -1,4 +1,5 @@
-hiya
+1/1: Building StringParser (StringParser.idr)
+Main> hiya
 2
 Parse failed at position 0: satisfy
 Parse failed at position 0: Not good
@@ -9,5 +10,4 @@ Parse failed at position 0: Not good
 ""
 True
 False
-1/1: Building StringParser (StringParser.idr)
-Main> Main> Bye for now!
+Main> Bye for now!

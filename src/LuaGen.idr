@@ -681,40 +681,147 @@ mutual -- TODO try remove in favour of forward declarions ?
   uninhabNS = preludeNS <.> mkNamespace "Uninhabited"
 
   iorefNS : Namespace
-  iorefNS = mkNamespace "Data" <.> mkNamespace "IORef"
+  iorefNS = mkNamespace "Data.IORef"
+
+  bufferNS : Namespace
+  bufferNS = mkNamespace "Data.Buffer"
 
   stringsNS : Namespace
-  stringsNS = mkNamespace "Data" <.> mkNamespace "Strings"
+  stringsNS = mkNamespace "Data.Strings"
+
+  strIterNS : Namespace
+  strIterNS = mkNamespace "Data.String.Iterator"
 
   arrayNS : Namespace
-  arrayNS = mkNamespace "Data" <.> mkNamespace "IOArray" <.> mkNamespace "Prims"
+  arrayNS = mkNamespace "Data.IOArray.Prims"
 
   systemNS : Namespace
   systemNS = mkNamespace "System"
 
+  dirNS : Namespace
+  dirNS = mkNamespace "System.Directory"
+
   infoNS : Namespace
-  infoNS = mkNamespace "System" <.> mkNamespace "Info"
+  infoNS = mkNamespace "System.Info"
+
+  fileNS : Namespace
+  fileNS = mkNamespace "System.File"
+
+  termNS : Namespace
+  termNS = mkNamespace "Utils.Term"
 
   ioNS : Namespace
   ioNS = preludeNS <.> mkNamespace "IO"
 
+  primioNS : Namespace
+  primioNS = mkNamespace "PrimIO"
+
   extNames : List Name
-  extNames = [mkNamespacedName (Just iorefNS) "prim__newIORef"
-             ,mkNamespacedName (Just iorefNS) "prim__readIORef"
-             ,mkNamespacedName (Just iorefNS) "prim__writeIORef"
-             ,mkNamespacedName (Just arrayNS) "prim__newArray"
-             ,mkNamespacedName (Just arrayNS) "prim__arrayGet"
-             ,mkNamespacedName (Just arrayNS) "prim__arraySet"
-             ,mkNamespacedName (Just infoNS)  "prim__os"
-             ,mkNamespacedName (Just uninhabNS) "void"] --TODO add other implemented names
+  extNames = [
+               mkNamespacedName (Just iorefNS) "prim__newIORef"
+             , mkNamespacedName (Just iorefNS) "prim__readIORef"
+             , mkNamespacedName (Just iorefNS) "prim__writeIORef"
+             , mkNamespacedName (Just arrayNS) "prim__newArray"
+             , mkNamespacedName (Just arrayNS) "prim__arrayGet"
+             , mkNamespacedName (Just arrayNS) "prim__arraySet"
+             , mkNamespacedName (Just infoNS)  "prim__os"
+             , mkNamespacedName (Just uninhabNS) "void"
+             , mkNamespacedName (Just ioNS) "onCollect"
+             , mkNamespacedName (Just ioNS) "onCollectAny"
+             ]
 
   foreignImpls : List Name
-  foreignImpls = [ mkNamespacedName (Just preludeNS) "prim__putStr"
-                 , mkNamespacedName (Just preludeNS) "prim__getStr"
+  foreignImpls = [
+                   ------------- Not Implemented -----------
+                   mkNamespacedName (Just $ mkNamespace "Idris.IDEMode.REPL") "prim__fdopen"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_accept"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_bind"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_create_sockaddr"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_free"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_family"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_ipv4"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_socket"
+                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__socket_listen"
+
+                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet"
+                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet6"
+                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unix"
+                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unspec"
+                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_errno"
+
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcCpu"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcReal"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeMonotonic"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeProcess"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeThread"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeUtc"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockNanosecond"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockSecond"
+                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockValid"
+                   -------------------------------------------
+
+
+                 , mkNamespacedName (Just primioNS) "prim__nullAnyPtr"
+                 , mkNamespacedName (Just ioNS) "prim__putStr"
+                 , mkNamespacedName (Just ioNS) "prim__putChar"
+                 , mkNamespacedName (Just ioNS) "prim__getStr"
+                 , mkNamespacedName (Just ioNS) "prim__getChar"
+                 , mkNamespacedName (Just ioNS) "prim__getString"
+                 , mkNamespacedName (Just fileNS) "prim__flush"
+                 , mkNamespacedName (Just fileNS) "prim__writeLine"
+                 , mkNamespacedName (Just fileNS) "prim__readLine"
+                 , mkNamespacedName (Just fileNS) "prim__readChar"
+                 , mkNamespacedName (Just fileNS) "prim__readChars"
+                 , mkNamespacedName (Just fileNS) "prim__eof"
+                 , mkNamespacedName (Just fileNS) "prim__open"
+                 , mkNamespacedName (Just fileNS) "prim__close"
+                 , mkNamespacedName (Just fileNS) "prim__error"
+                 , mkNamespacedName (Just fileNS) "prim__fileErrno"
+                 , mkNamespacedName (Just fileNS) "prim__removeFile"
+                 , mkNamespacedName (Just fileNS) "prim__fileSize"
+                 , mkNamespacedName (Just fileNS) "prim__fPoll"
+                 , mkNamespacedName (Just fileNS) "prim__fileModifiedTime"
+                 , mkNamespacedName (Just fileNS) "prim__fileStatusTime"
+                 , mkNamespacedName (Just fileNS) "prim__stdin"
+                 , mkNamespacedName (Just fileNS) "prim__stdout"
+                 , mkNamespacedName (Just fileNS) "prim__stderr"
+                 , mkNamespacedName (Just fileNS) "prim__chmod"
+                 , mkNamespacedName (Just dirNS) "prim__changeDir"
+                 , mkNamespacedName (Just dirNS) "prim__currentDir"
+                 , mkNamespacedName (Just dirNS) "prim__createDir"
+                 , mkNamespacedName (Just dirNS) "prim__removeDir"
+                 , mkNamespacedName (Just dirNS) "prim__openDir"
+                 , mkNamespacedName (Just dirNS) "prim__closeDir"
+                 , mkNamespacedName (Just dirNS) "prim__dirEntry"
+                 , mkNamespacedName (Just dirNS) "prim__fileErrno"
                  , mkNamespacedName (Just systemNS) "prim__getArgs"
+                 , mkNamespacedName (Just systemNS) "prim__getEnv"
+                 , mkNamespacedName (Just systemNS) "prim__exit"
+                 , mkNamespacedName (Just systemNS) "prim__system"
                  , mkNamespacedName (Just stringsNS) "fastConcat"
                  , mkNamespacedName (Just stringsNS) "fastUnpack"
                  , mkNamespacedName (Just typesNS) "fastPack"
+                 , mkNamespacedName (Just termNS) "prim__setupTerm"
+                 , mkNamespacedName (Just termNS) "prim__getTermCols"
+                 , mkNamespacedName (Just termNS) "prim__getTermLines"
+                 , mkNamespacedName (Just bufferNS) "prim__newBuffer"
+                 , mkNamespacedName (Just bufferNS) "prim__bufferSize"
+                 , mkNamespacedName (Just bufferNS) "prim__setByte"
+                 , mkNamespacedName (Just bufferNS) "prim__getByte"
+                 , mkNamespacedName (Just bufferNS) "prim__setInt32"
+                 , mkNamespacedName (Just bufferNS) "prim__getInt32"
+                 , mkNamespacedName (Just bufferNS) "prim__setInt"
+                 , mkNamespacedName (Just bufferNS) "prim__getInt"
+                 , mkNamespacedName (Just bufferNS) "prim__setDouble"
+                 , mkNamespacedName (Just bufferNS) "prim__getDouble"
+                 , mkNamespacedName (Just bufferNS) "prim__setString"
+                 , mkNamespacedName (Just bufferNS) "prim__getstring"
+                 , mkNamespacedName (Just bufferNS) "prim__copyData"
+                 , mkNamespacedName (Just bufferNS) "prim__readBufferData"
+                 , mkNamespacedName (Just bufferNS) "prim__writeBufferData"
+                 , mkNamespacedName (Just bufferNS) "stringByteLength"
+                 , mkNamespacedName (Just strIterNS) "prim__fromString"
+                 , mkNamespacedName (Just strIterNS) "prim__uncons"
                  ]
 
   processCustomExtCall :
@@ -1293,7 +1400,8 @@ compile defs tmpDir outputDir term file = Just <$> build defs outputDir term fil
 execute : Ref Ctxt Defs -> String -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
   exe <- build defs tmpDir term "generated"
-  _ <- coreLift $ system $ "'" ++ exe ++ "' "
+  coreLift $ fflush stdout
+  coreLift $ system $ "'" ++ exe ++ "' "
   pure ()
 
 luaCodegen : Codegen

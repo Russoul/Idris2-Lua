@@ -1,4 +1,5 @@
-"hey"
+1/1: Building Foreign (Foreign.idr)
+Main> "hey"
 {
   arg1 = 1,
   arg2 = {
@@ -44,5 +45,4 @@
     tag = "1"
   }
 }
-1/1: Building Foreign (Foreign.idr)
-Main> Main> Bye for now!
+Main> Bye for now!

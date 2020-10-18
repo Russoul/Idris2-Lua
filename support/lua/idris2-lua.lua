@@ -313,6 +313,23 @@ idris["Data.Strings.fastConcat"] = idris.fastConcat
 idris["Data.Strings.fastUnpack"] = idris.fastUnpack
 idris["Prelude.Types.fastPack"] = idris.fastConcat
 
+function idris.iterFromStringImpl(str)
+   return 1
+end
+
+function idris.unconsImpl(str, i)
+   if utf8.len(str) < i then
+      -- EOF
+      return {tag = "0"}
+   else
+      -- Character
+      return {tag = "1", arg1 = utf8.sub(str, i, i), arg2 = i + 1}
+   end
+end
+
+idris["Data.String.Iterator.fromString"] = idris.iterFromStringImpl
+idris["Data.String.Iterator.uncons"] = idris.unconsImpl
+
 function idris.mkPtr(val)
    if val then return {deref=val} else return null end
 end
