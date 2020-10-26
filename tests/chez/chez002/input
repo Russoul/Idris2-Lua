@@ -1,2 +1,2 @@
-:exec printLn (pythag 200)
+:exec printLn (pythag 50)
 :q

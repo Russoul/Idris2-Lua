@@ -1259,11 +1259,6 @@ mutual -- TODO try remove in favour of forward declarions ?
   processDef (n, _, MkNmCon _ _ _) =
     pure LDoNothing  --we do not need to predefine structures in lua
 
-
-builtinSupportDefs : List LuaExpr -- add top level lua defs from here or through support library
-builtinSupportDefs = []
-
-
 getCOpts : Core COpts --TODO use directives ?
 getCOpts =
    do
@@ -1329,16 +1324,17 @@ translate defs term = do
 
   let stringPlan : DeferedStr =
              [ " --------- SUPPORT DEFS ---------\n"
-             , "idris = {}\n"
-             , "idris.null = {}\n"
-             , "local null = idris.null\n"
-             , "idris.luaVersion = " ++ show (opts |> luaVersion |> get |> index) ++ "\n" --sets target Lua version to be used in support
-             , "idris.noRequire  = " ++ (toLower . show) (opts |> noRequire |> get) ++ "\n"
-             , support , "\n"
-             , stringify Z (concat builtinSupportDefs)
+             , "if not idris then\n"
+             , "  idris = {}\n"
+             , "  idris.null = {}\n"
+             , "  local null = idris.null\n"
+             , "  idris.luaVersion = " ++ show (opts |> luaVersion |> get |> index) ++ "\n" --sets target Lua version to be used in support
+             , "  idris.noRequire  = " ++ (toLower . show) (opts |> noRequire |> get) ++ "\n"
+             , "  ", support , "\n"
+             , "end\n"
              , "local idris = idris"
              , "\n---------- PREAMBLE DEFS ----------\n"
-             , join "\n" (preamble |> values) , "\n\n"
+             , join "\n" (preamble |> values)
              , "\n---------- CTX DEFS ----------\n"
              , stringify Z con_cdefs
              , "\n--------- RETURN ---------\n"
