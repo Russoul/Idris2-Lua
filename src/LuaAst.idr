@@ -34,7 +34,6 @@ data LuaExpr =  LLVar Name -- references some local variable
               | LTable (List (LuaExpr, LuaExpr))
               | LIndex LuaExpr LuaExpr
               | LSeq LuaExpr LuaExpr
-              | LFnDecl Name (List Name) LuaExpr --global function decl
               | LReturn LuaExpr
               | LAssign (Maybe Visibility) LuaExpr LuaExpr  --decl with initial val and reassignment
               | LDeclVar Visibility Name

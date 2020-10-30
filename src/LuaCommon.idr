@@ -244,6 +244,7 @@ writeStr marker str =
              else
                 pure buf
 
+-- TODO switch to LazyList String ?
 public export
 data DeferedStr : Type where
    Nil : DeferedStr

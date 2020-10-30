@@ -1,5 +1,7 @@
 module LuaGen
 
+import Order
+
 import Compiler.Common
 import Compiler.CompileExpr
 import Compiler.ES.RemoveUnused
@@ -13,6 +15,7 @@ import Data.Bool.Extra
 import Data.Buffer
 import Data.List
 import Data.List1
+import Data.SortedSet
 import Data.SortedMap
 import Data.String.Extra
 import Data.Strings
@@ -122,9 +125,6 @@ mkCrashAst crash =
 
 luaNull : LuaExpr
 luaNull = LGVar (UN "null")
-
-ifThenElseName : Name
-ifThenElseName = UN "idris__ifThenElse"
 
 getArgsName : Name
 getArgsName = UN "idris__getArgs"
@@ -261,19 +261,28 @@ mutual
     , "end" ]
   stringify n (LApp lvar@(LLVar name) xs) = --less noise
     [ (stringify n lvar)
-    , "(\n"
-    , indent n
-    , sepBy (stringify (S n) <$> xs) ",\n"
-    , "\n"
-    , indent n
+    , "("
+    , sepBy (stringify 0 <$> xs) ","
     , ")" ]
   stringify n (LApp gvar@(LGVar name) xs) = --less noise
     [ (stringify n gvar)
-    , "(\n"
-    , indent n
-    , sepBy (stringify (S n) <$> xs) ",\n"
-    , "\n"
-    , indent n
+    , "("
+    , sepBy (stringify 0 <$> xs) ","
+    , ")" ]
+  stringify n (LApp lvar@(LIndex (LGVar _) _) xs) = --less noise
+    [ (stringify n lvar)
+    , "("
+    , sepBy (stringify 0 <$> xs) ","
+    , ")" ]
+  stringify n (LApp lvar@(LIndex (LLVar _) _) xs) = --less noise
+    [ (stringify n lvar)
+    , "("
+    , sepBy (stringify 0 <$> xs) ","
+    , ")" ]
+  stringify n (LApp lvar@(LApp _ _) xs) = --less noise
+    [ (stringify n lvar)
+    , "("
+    , sepBy (stringify 0 <$> xs) ","
     , ")" ]
   stringify n (LApp f xs) =                 --general case
     [ indent n , "(\n"
@@ -332,13 +341,6 @@ mutual
     , indent n
     , "]" ]
   stringify n (LSeq x y) = [ stringify n x , "\n" , stringify n y ]
-  stringify n (LFnDecl name args body) =
-    [ indent n
-    , stringifyName Global name
-    , " = "
-    , "function "
-    , "(" , sepBy (pure . stringifyName Local <$> args) ", " , ")\n"
-    , stringify (S n) body , "\n" , indent n , "end" ]
   stringify n (LReturn x) = [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
   stringify n (LAssign (Just vis) x y) =
     [ indent n
@@ -432,7 +434,7 @@ mutual
 
 
 
-  stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "strtointeger" [x] --defined in support
+  stringify n (LPrimFn (Cast StringType IntType) [x]) = stringifyFnApp n "idris.strtointeger" [x] --defined in support
   stringify n (LPrimFn (Cast StringType DoubleType) [x]) = stringifyFnApp n "tonumber" [x]
   stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
@@ -643,6 +645,10 @@ processConstant c = throw $ InternalError ("Unsupported constant '" ++ (show c) 
 justReturn : LuaExpr -> LuaBlock
 justReturn expr = (LDoNothing, expr)
 
+curriedApp : LuaExpr -> List LuaExpr -> LuaExpr
+curriedApp head [] = head
+curriedApp head (x :: xs) = curriedApp (LApp head [x]) xs
+
 mkCaseImpl :
        {auto stack : Ref Stack StackSt}
     -> {auto frame : StackFrame}
@@ -725,6 +731,7 @@ mutual -- TODO try remove in favour of forward declarions ?
              , mkNamespacedName (Just arrayNS) "prim__arrayGet"
              , mkNamespacedName (Just arrayNS) "prim__arraySet"
              , mkNamespacedName (Just infoNS)  "prim__os"
+             , mkNamespacedName (Just infoNS)  "prim__codegen"
              , mkNamespacedName (Just uninhabNS) "void"
              , mkNamespacedName (Just ioNS) "onCollect"
              , mkNamespacedName (Just ioNS) "onCollectAny"
@@ -833,7 +840,7 @@ mutual -- TODO try remove in favour of forward declarions ?
       -> Core LuaBlock
   processCustomExtCall name args
    = do (blocks, args) <- unzip <$> traverse processExpr args
-        pure $ (concat blocks, LApp (LGVar $ UN $ nameRoot name) args)
+        pure $ (concat blocks, curriedApp (LGVar $ name) args)
 
 
   --fully applied external name
@@ -903,7 +910,16 @@ mutual -- TODO try remove in favour of forward declarions ?
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
-                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                         pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
+                    _ => processCustomExtCall name args )
+             ,
+             ( pure $ ns == infoNS
+             , case n of
+                    "prim__codegen" =>
+                       do
+                         args' <- traverse processExpr args
+                         let (blockA, args) = unzip args'
+                         pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
                     _ => processCustomExtCall name args )
              ,
              ( pure $ ns == uninhabNS
@@ -912,7 +928,7 @@ mutual -- TODO try remove in favour of forward declarions ?
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
-                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                         pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
                     _ => processCustomExtCall name args )
              ,
              ( pure $ ns == ioNS
@@ -921,12 +937,12 @@ mutual -- TODO try remove in favour of forward declarions ?
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
-                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                         pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
                     "prim__onCollect" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
-                         pure (concat blockA, LApp (LGVar name) args) --defined in support file
+                         pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
                     _ => processCustomExtCall name args) ] (processCustomExtCall name args)
   -- where
   --   notDefined : Core a
@@ -1054,7 +1070,7 @@ mutual -- TODO try remove in favour of forward declarions ?
       (cf, f) <- processExpr f
       args <- traverse processExpr args
       let (cargs, args) = unzip args
-      pure (cf <+> concat cargs, LApp f args)
+      pure (cf <+> concat cargs, curriedApp f args)
   processExpr (NmPrimVal _ c) = pure (LDoNothing, !(processConstant c))
   processExpr (NmOp _ op@(EQ _) args) = processPrimCmp op args
   processExpr (NmOp _ op@(LT _) args) = processPrimCmp op args
@@ -1121,11 +1137,6 @@ mutual -- TODO try remove in favour of forward declarions ?
     do
       args <- traverse processExpr args
       let (blockA, args) = unzip args
-      -- let args = (\(arg, i) => LApp (LVar ifThenElseName) --nil check before any table construction TODO this is for debug only
-      --                [LPrimFn (EQ IntType) [arg, LNil]
-      --                , LLambda [] $ mkErrorAst ("arg" ++ show i ++ " is nil")
-      --                , LLambda [] $ LReturn $ arg])
-      --                <$> zip args [1..args.length]
       tableVar <- pushLocal
       let conArgs = zipWith (\i, arg => (LString $ "arg" ++ (show i), arg)) [1..args |> length] args
       let mbName = if opts |> storeConstructorName |> get then [(LString "cons", LString $ stringifyName Global n), (LString "num", LNumber $ args |> length |> show)] else []
@@ -1236,9 +1247,9 @@ mutual -- TODO try remove in favour of forward declarions ?
         -> {auto opts : COpts}
         -> {auto refs : Ref Ctxt Defs}
         -> {auto preamble : Ref Preamble PreambleSt}
-        -> (Name, FC, NamedDef)
-        -> Core LuaExpr {-block of code-}
-  processDef (n, _, MkNmFun args expr) =
+        -> (Name, NamedDef)
+        -> Core LuaExpr {- returns an assignment expression (statement) -}
+  processDef (n, MkNmFun args expr) =
    if (find (== n) extNames) |> isJust
       then
          pure LDoNothing --do not gen names for ext fns and foreign fns, done separately
@@ -1246,17 +1257,24 @@ mutual -- TODO try remove in favour of forward declarions ?
          newFrame <- pushFrame
          (blockA, expr) <- processExpr {frame = newFrame} expr
          vars <- popFrame
-         pure $ LFnDecl n args $ declFrameTable newFrame vars
+         pure $ mkFnDecl n (reverse args) $ LApp (LLambda [] $ declFrameTable newFrame vars
                                 <+> blockA
-                                <+> (LReturn expr) --paste code block into function def
+                                <+> LReturn expr) [] -- paste code block into the function body,
+                                                     -- we have to wrap the code in a lambda and then immediately call it
+                                                     -- to make sure the block & the return expr form a valid Lua expression
+    where
+      mkFnDecl : Name -> List Name -> LuaExpr -> LuaExpr
+      mkFnDecl n [] expr = LAssign (Just Global) (LGVar n) expr
+      mkFnDecl n (x :: xs) expr = mkFnDecl n xs (LLambda [x] (LReturn expr))
 
-  processDef (n, _, MkNmError expr) =
+
+  processDef (n, MkNmError expr) =
     throw $ (InternalError (show expr))
-  processDef (n, _, MkNmForeign hints argsty retty) = --those are added into the preamble
+  processDef (n, MkNmForeign hints argsty retty) = --those are added into the preamble
     do
       processForeignDef n hints argsty retty
       pure LDoNothing
-  processDef (n, _, MkNmCon _ _ _) =
+  processDef (n, MkNmCon _ _ _) =
     pure LDoNothing  --we do not need to predefine structures in lua
 
 getCOpts : Core COpts --TODO use directives ?
@@ -1300,6 +1318,10 @@ translate defs term = do
   clock2 <- coreLift $ clockTime Monotonic
   logLine $ "Looked up direct names [2/5] in " ++ showMillis (toMillis $ timeDifference clock2 clock1)
   let ndefs = defsUsedByNamedCExp ctm ndefs -- work through relevant names only
+  let ndefs = quicksort {r = DependsOn} ((\(n, _, d) => (n, d)) <$> ndefs) -- sort names by dependency order
+  -- traverse (coreLift . putStrLn . show . fst) (filter (\(n, d) => contains (NS (mkNamespace "Main") $ UN "process") (Order.usedNamesDef d)) ndefs)
+  -- coreLift $ putStrLn "------"
+  -- traverse (coreLift . putStrLn . show . fst) (filter (\(n, d) => contains (NS (mkNamespace "Main") $ UN "main") (Order.usedNamesDef d)) ndefs)
   s <- newRef Stack (MkStackSt [] frameLowest indexLowest)
   pr <- newRef Preamble (MkPreambleSt empty)
   cdefs <- traverse processDef (reverse ndefs)

@@ -45,4 +45,9 @@ Main> "hey"
     tag = "1"
   }
 }
+is four 4
+A string from Lua !
+Got ok back
+"lua"
+Another string from Lua !
 Main> Bye for now!
