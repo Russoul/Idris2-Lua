@@ -1,0 +1,2 @@
+$1 --no-banner Test.idr < input
+rm -rf build

@@ -3,11 +3,11 @@ module LuaCommon
 
 import Core.Core
 import Core.Name
-import Data.Strings
-import Data.String.Extra as StrExtra
-import Data.Vect
-import Data.List
 import Data.Buffer
+import Data.List
+import Data.String.Extra as StrExtra
+import Data.Strings
+import Data.Vect
 import Utils.Hex
 
 infixl 100 |>
@@ -97,18 +97,30 @@ namespace LuaVersion
 
 
 namespace Data.List
-  export
+  public export
   unzip : (xs : List (a, b)) -> (List a, List b)
   unzip ((l, r) :: xs) =
     let (ls, rs) = unzip xs in
         (l :: ls, r :: rs)
   unzip [] = ([], [])
 
+  public export
+  contains : Eq a => List a -> a -> Bool
+  contains [] _ = False
+  contains (x :: xs) x' = x == x' || contains xs x
+
+  public export
+  group : {n : _} -> List a -> Vect n (a -> Bool) -> Vect n (List a)
+  group [] _ = replicate _ []
+  group (x :: xs) fs
+   = zipWith (++) (map (\f => fromMaybe [] (toMaybe (f x) [x])) fs) (group xs fs)
+
+
+
 namespace Data.Maybe
-  export
+  public export %inline
   orElse : (maybe : Maybe a) -> Lazy a -> a
-  orElse Nothing x = x
-  orElse (Just x) _ = x
+  orElse = flip fromMaybe
 
 public export
 luaKeywords : List String

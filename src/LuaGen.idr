@@ -1,10 +1,7 @@
 module LuaGen
 
-import Order
-
 import Compiler.Common
 import Compiler.CompileExpr
-import Compiler.ES.RemoveUnused
 
 import Control.Monad.Syntax
 
@@ -31,8 +28,9 @@ import System.File
 import Utils.Hex
 import Utils.Path
 
-import public LuaCommon
-import public LuaAst
+import LuaCommon
+import OrderDefs
+import LuaAst
 
 
 data Stack : Type where
@@ -765,6 +763,11 @@ mutual -- TODO try remove in favour of forward declarions ?
                  , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockNanosecond"
                  , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockSecond"
                  , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockValid"
+
+                 , mkNamespacedName (Just ioNS) "prim__fork"
+                 , mkNamespacedName (Just systemNS) "prim__setEnv"
+                 , mkNamespacedName (Just systemNS) "prim__getEnvPair"
+                 , mkNamespacedName (Just systemNS) "prim__unsetEnv"
                    -------------------------------------------
 
 
@@ -1294,14 +1297,6 @@ getCOpts =
                (thisOrDefault (opt4 >>= parseEnvBool))
                (thisOrDefault (opt5 >>= parseEnvBool))
 
--- printDefs : List (Name, FC, NamedDef) -> List (Name, GlobalDef) -> Core ()
--- printDefs ndefs gdefs = (logLine . delay . foldl (++) "" . map toString) ndefs
---   where
---     toString : (Name, FC, NamedDef) -> String
---     toString (n, _, d) = "def:\n   " ++ show n ++ "\n"
---                      ++ "ty:\n   " ++ show (type <$> lookup n gdefs) ++ "\n"
---                      ++ "case tree:\n   " ++ show d ++ "\n\n"
-
 translate : Ref Ctxt Defs -> ClosedTerm -> Core StrBuffer
 translate defs term = do
   opts <- getCOpts
@@ -1317,14 +1312,13 @@ translate defs term = do
   let ctm = forget cdata.mainExpr
   clock2 <- coreLift $ clockTime Monotonic
   logLine $ "Looked up direct names [2/5] in " ++ showMillis (toMillis $ timeDifference clock2 clock1)
+  let ndefs = (\(n, _, d) => (n, d)) <$> ndefs
   let ndefs = defsUsedByNamedCExp ctm ndefs -- work through relevant names only
-  let ndefs = quicksort {r = DependsOn} ((\(n, _, d) => (n, d)) <$> ndefs) -- sort names by dependency order
-  -- traverse (coreLift . putStrLn . show . fst) (filter (\(n, d) => contains (NS (mkNamespace "Main") $ UN "process") (Order.usedNamesDef d)) ndefs)
-  -- coreLift $ putStrLn "------"
-  -- traverse (coreLift . putStrLn . show . fst) (filter (\(n, d) => contains (NS (mkNamespace "Main") $ UN "main") (Order.usedNamesDef d)) ndefs)
+  let ndefs = quicksort {r = Lte ndefs} ndefs -- sort names by dependency order
+  --printDebug ndefs
   s <- newRef Stack (MkStackSt [] frameLowest indexLowest)
   pr <- newRef Preamble (MkPreambleSt empty)
-  cdefs <- traverse processDef (reverse ndefs)
+  cdefs <- traverse processDef ndefs
   clock3 <- coreLift $ clockTime Monotonic
   logLine $ "Compiled definitions [3/5] in " ++ showMillis (toMillis $ timeDifference clock3 clock2)
   let con_cdefs = concat cdefs

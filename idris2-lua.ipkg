@@ -3,8 +3,8 @@ package idris2lua
 depends = idris2, contrib, network
 
 modules =
-  Order,
   LuaCommon,
+  OrderDefs,
   LuaAst,
   LuaGen
 
