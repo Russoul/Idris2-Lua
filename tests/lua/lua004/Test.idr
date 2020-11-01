@@ -71,7 +71,6 @@ main = do
    f <- ignoreErr $ openFile "data4.txt" Read
    putStrLn $ show !(fGetLine f)
    putStrLn $ show !(fEOF f)
-   putStrLn $ show !(fileModifiedTime f)
    fPutStrLn stdout "\x1b[38;2;255;100;0mThis is error\x1b[0m"
    closeFile f
    writeFile "data.txt" $ ansiColorStr "red\n" [255, 0, 0]

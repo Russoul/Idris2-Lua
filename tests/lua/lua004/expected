@@ -11,7 +11,6 @@ A8
 A6
 Right ""
 True
-Right 1604172008
 [38;2;255;100;0mThis is error[0m
 257
 "\ESC[38;2;255;0;0mred\n\ESC[0m\ESC[38;2;0;255;0mgreen\n\ESC[0m\ESC[38;2;0;0;255mblue\ESC[0m"
