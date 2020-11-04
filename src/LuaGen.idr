@@ -158,25 +158,24 @@ stringifyName : Visibility -> Name -> String
 stringifyName Local name = stringifyNameMangle name
 stringifyName Global name = "idris[" ++ show (stringifyNameGlobal name) ++ "]"
 
---makes generated code ugly and unreadable but improves stringification speed A LOT
 %hide LuaCommon.indent
 %inline
 indent : Nat -> String
-indent n = ""
+indent n = replicate (2 * n) ' '
 
 mutual
   stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
   stringifyBinOp n op x y = [stringify n x
                             , " "
                             , op
-                            , "\n"
+                            , " "
                             ,stringify (S n) y]
 
   stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
   stringifyMethodApp n method x y = [stringify n x
                                     , ":", method
-                                    , "(\n"
-                                    ,stringify (S n) y
+                                    , "("
+                                    ,stringify (1 + n) y
                                     , ")"]
 
   stringifyFnApp :
@@ -185,12 +184,11 @@ mutual
    -> Vect n LuaExpr
    -> DeferedStr
   stringifyFnApp n fn args =
-    [indent n
-    , fn
-    , "(\n"
-    ,sepBy (stringify (S n) <$> args |> toList) ",\n"
-    , "\n"
-    , indent n , ")"]
+    [ fn
+    , "("
+    ,sepBy (stringify (1 + n) <$> args |> toList) ", "
+    , ""
+    , ")"]
 
   --TODO add compiler option to throw when it encounters unsupported ops
   opNotSupportedErr : {auto copts : COpts} -> String -> String
@@ -236,80 +234,86 @@ mutual
     let vstr = show str in --unpack is necessary as function stack size is very limited in lua
         "utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ trimQuotes vstr ++ "--]]"
 
+  data AppPrec = Lower | Higher
+  appPrec : LuaExpr -> AppPrec
+  appPrec (LLVar x) = Higher
+  appPrec (LGVar x) = Higher
+  appPrec (LLambda xs x) = Lower
+  appPrec (LApp x xs) = Higher
+  appPrec (LPrimFn x xs) = Lower
+  appPrec LTrue = Higher
+  appPrec LFalse = Higher
+  appPrec LNil = Higher
+  appPrec (LNumber x) = Higher
+  appPrec (LBigInt x) = Higher
+  appPrec (LString x) = Higher
+  appPrec (LTable xs) = Lower
+  appPrec (LIndex x y) = Higher
+  appPrec (LSeq x y) = Lower
+  appPrec (LReturn x) = Lower
+  appPrec (LAssign x y z) = Lower
+  appPrec (LDeclVar x y) = Lower
+  appPrec (LIfThenElse x y z) = Lower
+  appPrec LBreak = Lower
+  appPrec (LWhile x y) = Lower
+  appPrec LDoNothing = Lower
+  appPrec (LComment x) = Lower
+
   stringify :
         {auto copts : COpts}
      -> (n : Nat)
      -> LuaExpr
      -> DeferedStr
-  stringify n (LLVar name) =
-    [indent n, stringifyName Local name]
-  stringify n (LGVar name) =
-    [indent n, stringifyName Global name]
-  stringify n (LDeclVar Local name) =
-    [ indent n, stringifyVisibility Local, " ", stringifyName Local name]
+  stringify _ (LLVar name) =
+    [stringifyName Local name]
+  stringify _ (LGVar name) =
+    [stringifyName Global name]
+  stringify _ (LDeclVar Local name) =
+    [stringifyVisibility Local, " ", stringifyName Local name]
   stringify n (LDeclVar Global name) =
-    [ indent n, stringifyVisibility Global, stringifyName Global name]
+    [stringifyVisibility Global, stringifyName Global name]
   stringify n (LLambda args body) =
-    [ indent n
-    , "function("
+    [ "function("
     , sepBy (pure . stringifyName Local <$> args) ", "
     , ")\n"
-    , (stringify (S n) body) , "\n"
+    , indent (S n)
+    , stringify (S n) body , "\n"
     , indent n
     , "end" ]
-  stringify n (LApp lvar@(LLVar name) xs) = --less noise
-    [ (stringify n lvar)
-    , "("
-    , sepBy (stringify 0 <$> xs) ","
-    , ")" ]
-  stringify n (LApp gvar@(LGVar name) xs) = --less noise
-    [ (stringify n gvar)
-    , "("
-    , sepBy (stringify 0 <$> xs) ","
-    , ")" ]
-  stringify n (LApp lvar@(LIndex (LGVar _) _) xs) = --less noise
-    [ (stringify n lvar)
-    , "("
-    , sepBy (stringify 0 <$> xs) ","
-    , ")" ]
-  stringify n (LApp lvar@(LIndex (LLVar _) _) xs) = --less noise
-    [ (stringify n lvar)
-    , "("
-    , sepBy (stringify 0 <$> xs) ","
-    , ")" ]
-  stringify n (LApp lvar@(LApp _ _) xs) = --less noise
-    [ (stringify n lvar)
-    , "("
-    , sepBy (stringify 0 <$> xs) ","
-    , ")" ]
-  stringify n (LApp f xs) =                 --general case
-    [ indent n , "(\n"
-    , stringify (S n) f
-    , ")(\n"
-    , indent n
-    , sepBy (stringify (S n) <$> xs) ",\n"
-    , "\n" , indent n , ")"]
-  stringify n LNil = [indent n, "nil"]
-  stringify n LFalse = [indent n, "false"]
-  stringify n LTrue = [indent n, "true"]
-  stringify n (LNumber num) = [indent n, num]
-  stringify n (LBigInt num) = [ indent n , "bigint:new(" , "\"" , num , "\"" , ")" ]
-  stringify n (LString s) = [ indent n , stringifyString s ]
-  stringify n (LComment s) = [ indent n, "--[[ ",  s, " --]]"]
-  stringify n (LTable []) = ["{}"]
+  stringify n (LApp f xs) =
+    case appPrec f of
+      Lower =>
+        [ "("
+        , stringify n f
+        , ")("
+        , sepBy (stringify n <$> xs) ","
+        , ")"]
+      Higher =>
+        [ stringify n f
+        , "("
+        , sepBy (stringify n <$> xs) ","
+        , ")" ]
+  stringify _ LNil = ["nil"]
+  stringify _ LFalse = ["false"]
+  stringify _ LTrue = ["true"]
+  stringify _ (LNumber num) = [num]
+  stringify _ (LBigInt num) = ["bigint:new(" , "\"" , num , "\"" , ")" ]
+  stringify _ (LString s) = [stringifyString s]
+  stringify _ (LComment s) = ["--[[ ",  s, " --]]"]
+  stringify _ (LTable []) = ["{}"]
   stringify n (LTable kvs@(_ :: _)) =
-    [ indent n , "{\n"
+    [ "{\n"
     , sepBy ((\(k, v) =>
-            let general = [indent (S n), "[", stringify Z k, "]", " = \n", stringify (n + 2) v] in
+            let general = [indent (1 + n), "[", stringify (1 + n) k, "]", " = \n", indent (2 + n), stringify (2 + n) v] in
                 case k of
-                     LDoNothing => [stringify (n + 1) v]
+                     LDoNothing => [indent (1 + n), stringify (1 + n) v]
                      (LString str) => let chars = unpack str in
                         case ((\c => c == '_' || isAlpha c)
                               <$> chars |> head' `orElse` False)
                              && forAll (\x => isAlphaNum x || x == '_') chars of --TODO properly look into what lua allows here
-                             True => [indent (S n), str, " = \n", stringify (n + 2) v]                           --lua can do
+                             True => [indent (1 + n), str, " = \n", indent (2 + n), stringify (2 + n) v]                           --lua can do
                              False => general
-                     (LNumber num) => [indent (S n), show num, " = \n", stringify (n + 2) v]                     --better at optimising these
+                     (LNumber num) => [indent (1 + n), show num, " = \n", indent (2 + n), stringify (2 + n) v]                     --better at optimising these
                      _ => general
             ) <$> kvs)
             ",\n"
@@ -317,14 +321,10 @@ mutual
     , indent n
     , "}" ]
   stringify n (LIndex e i) =
-    [ indent n
-    , "\n"
-    , stringify (S n) e
-    , "\n"
-    , indent n
-    , "[\n"
+    [ stringify n e
+    , "["
     , the DeferedStr
-       $ let general = stringify (S n) i in
+       $ let general = stringify (1 + n) i in
           case i of
                (LString str) => let chars = unpack str in
                                     if ((\c => c == '_' || isAlpha c)
@@ -335,47 +335,39 @@ mutual
                                        else
                                           general
                _ => general
-    , "\n"
-    , indent n
     , "]" ]
-  stringify n (LSeq x y) = [ stringify n x , "\n" , stringify n y ]
-  stringify n (LReturn x) = [ indent n , "return \n" , stringify (S n) x , "\n" , indent n , "" ]
+  stringify n (LSeq x y) = [stringify n x , "\n" , indent n, stringify n y]
+  stringify n (LReturn x) = ["return " , stringify (1 + n) x]
   stringify n (LAssign (Just vis) x y) =
-    [ indent n
-    , stringifyVisibility vis
-    , "\n"
+    [ stringifyVisibility vis
+    , if vis == Local then " " else ""
     , stringify n x
-    , " =\n"
-    , stringify (n + 2) y
+    , " = "
+    , stringify n y
     ]
   stringify n (LAssign Nothing x y) =
-    [ stringify n x , " =\n" , stringify (S n) y ]
+    [stringify n x , " = " , stringify n y]
   stringify n (LIfThenElse cond x y) =
-    [ indent n , "if\n"
-    , stringify (S n) cond
-    , "\n"
-    , indent n
-    , "then\n"
-    , stringify (S n) x , "\n"
+    [ "if "
+    , stringify (1 + n) cond
+    , " then\n"
+    , indent (1 + n), stringify (1 + n) x , "\n"
     , indent n
     , "else\n"
-    , stringify (S n) y
+    , indent (1 + n), stringify (1 + n) y
     , "\n"
     , indent n
     , "end" ]
-  stringify n LBreak = [indent n, "break"]
+  stringify _ LBreak = ["break"]
   stringify n (LWhile cond body) =
-    [ indent n
-    , "while\n"
-    , stringify (S n) cond
-    , "\n"
-    , indent n
-    , "do\n"
-    , stringify (S n) body
+    [ "while "
+    , stringify (1 + n) cond
+    , " do\n"
+    , indent (1 + n), stringify (1 + n) body
     , "\n"
     , indent n
     , "end" ]
-  stringify n LDoNothing = [""]
+  stringify _ LDoNothing = [""]
   stringify n (LPrimFn (Add ty) [x, y]) = stringifyBinOp n "+" x y
   stringify n (LPrimFn (Sub ty) [x, y]) = stringifyBinOp n "-" x y
   stringify n (LPrimFn (Mul ty) [x, y]) = stringifyBinOp n "*" x y
@@ -387,7 +379,7 @@ mutual
   stringify n (LPrimFn (Div IntegerType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Div DoubleType) [x, y]) = stringifyBinOp n "/" x y
   stringify n (LPrimFn (Mod ty) [x ,y]) = stringifyBinOp n "%" x y
-  stringify n (LPrimFn (Neg ty) [x]) = [indent n, "- (", stringify Z x, ")"]
+  stringify n (LPrimFn (Neg ty) [x]) = ["- (", stringify n x, ")"]
   stringify n (LPrimFn op@(ShiftL _) args) = stringifyBitOp n op args (copts |> luaVersion |> get)
   stringify n (LPrimFn op@(ShiftR _) args) = stringifyBitOp n op args (copts |> luaVersion |> get)
   stringify n (LPrimFn op@(BAnd _) args)   = stringifyBitOp n op args (copts |> luaVersion |> get)
@@ -398,26 +390,41 @@ mutual
   stringify n (LPrimFn (EQ ty) [x, y]) = stringifyBinOp (S n) "==" x y
   stringify n (LPrimFn (GTE ty) [x, y]) = stringifyBinOp (S n) ">=" x y
   stringify n (LPrimFn (GT ty) [x, y]) = stringifyBinOp (S n) ">" x y
-  stringify n (LPrimFn StrLength [x]) = [ indent n , "utf8.len(\n" , stringify (S n) x , ")" ]
-  stringify n (LPrimFn StrHead [x]) = [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 1, 1)" ]
-  stringify n (LPrimFn StrTail [x]) = [ indent n , "utf8.sub(\n" , stringify (S n) x , ", 2)" ]
+  stringify n (LPrimFn StrLength [x]) = ["utf8.len(" , stringify (1 + n) x , ")"]
+  stringify n (LPrimFn StrHead [x]) = ["utf8.sub(" , stringify (1 + n) x , ", 1, 1)"]
+  stringify n (LPrimFn StrTail [x]) = ["utf8.sub(" , stringify (1 + n) x , ", 2)"]
   stringify n (LPrimFn StrIndex [str, i]) =
-      let strI = stringify (S n) i in
-         [ indent n , "utf8.sub(\n" , stringify (S n) str
-         , ",\n" , strI , ",\n"
-         , strI , ")" ]
+      let strI = stringify (1 + n) i in
+         [ "utf8.sub("
+         , stringify (1 + n) str
+         , ", "
+         , strI
+         , ", "
+         , strI
+         , ")" ]
   stringify n (LPrimFn StrCons [x, xs]) =
-    [ indent n , "(\n" , stringify (S n) x , ") .. (\n"
-    , stringify (S n) xs , ")" ]
+    [ "("
+    , stringify (1 + n) x
+    , ") .. ("
+    , stringify (1 + n) xs
+    , ")" ]
   stringify n (LPrimFn StrAppend [x, xs]) =
-    [ indent n , "(\n" , stringify (S n) x , ") .. (\n"
-    , stringify (S n) xs , ")" ]
-  stringify n (LPrimFn StrReverse [x]) = [ indent n , "(\n" , stringify (S n) x , "):reverse()" ]
+    [ "(" , stringify (1 + n) x
+    , ") .. ("
+    , stringify (1 + n) xs
+    , ")" ]
+  stringify n (LPrimFn StrReverse [x]) = ["(" , stringify (1 + n) x , "):reverse()"]
   stringify n (LPrimFn StrSubstr [offset, len, str]) =
-     let strOff = stringify (S n) offset in
-        [ indent n , "utf8.sub(\n" , stringify (S n) str
-        , ",\n" , strOff
-        , ",\n" , strOff , " +\n" , stringify (S n) len , " - 1)" ]
+     let strOff = stringify (1 + n) offset in
+        ["utf8.sub("
+        , stringify (1 + n) str
+        , ", "
+        , strOff
+        , ", "
+        , strOff
+        , " + ("
+        , stringify (1 + n) len
+        , ") - 1)" ]
   stringify n (LPrimFn DoubleExp args) = stringifyFnApp n "math.pow" args
   stringify n (LPrimFn DoubleLog args) = stringifyFnApp n "math.log" args
   stringify n (LPrimFn DoubleSin args) = stringifyFnApp n "math.sin" args
@@ -437,13 +444,13 @@ mutual
   stringify n (LPrimFn (Cast StringType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast IntType CharType) [x]) = [ indent n , "utf8.char(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn (Cast IntType CharType) [x]) = ["utf8.char(" , stringify (1 + n) x , ")"]
   stringify n (LPrimFn (Cast IntType DoubleType) [x]) = stringify n x
   stringify n (LPrimFn (Cast IntType IntegerType) [x]) = stringifyFnApp n "bigint:new" [x]
 
 
-  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = [ indent n , "bigint:new(utf8.byte(\n" , stringify (S n) x , "))" ]
-  stringify n (LPrimFn (Cast CharType IntType) [x]) = [ indent n , "utf8.byte(\n" , stringify (S n) x , ")" ]
+  stringify n (LPrimFn (Cast CharType IntegerType) [x]) = ["bigint:new(utf8.byte(" , stringify (1 + n) x , "))"]
+  stringify n (LPrimFn (Cast CharType IntType) [x]) = ["utf8.byte(" , stringify (1 + n) x , ")"]
 
 
   stringify n (LPrimFn (Cast IntegerType DoubleType) [x]) = stringifyFnApp n "bigint.tonumber" [x]
@@ -453,7 +460,7 @@ mutual
 
   stringify n (LPrimFn (Cast DoubleType IntType) [x]) = stringifyFnApp n "math.floor" [x]
   stringify n (LPrimFn (Cast DoubleType IntegerType) [x]) =
-    [ indent n , "bigint:new(math.floor(\n" , stringify (S n) x , "))" ]
+    ["bigint:new(math.floor(" , stringify (1 + n) x , "))" ]
 
 
   stringify n (LPrimFn (Cast ty StringType) [x]) = stringifyFnApp n "tostring" [x]
