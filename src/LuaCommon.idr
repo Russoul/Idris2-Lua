@@ -194,21 +194,22 @@ public export
 indent : Nat -> String
 indent n = StrExtra.replicate (2 * n) ' '
 
-
--- public export
--- escapeString : String -> String
--- escapeString s = concatMap okchar (unpack s)
---   where
---     okchar : Char -> String
---     okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
---                   then cast c
---                   else case c of
---                             '\0' => "\\0"
---                             '\'' => "\\'"
---                             '"' => "\\\""
---                             '\r' => "\\r"
---                             '\n' => "\\n"
---                             other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
+||| Escape some of the ascii codes, fail on unicode, as
+||| not all supported lua versions have unicode escape sequences
+public export
+escapeStringLua : String -> Maybe String
+escapeStringLua s = concat <$> traverse okchar (fastUnpack s)
+  where
+    okchar : Char -> Maybe String
+    okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
+                  then Just (cast c)
+                  else case c of
+                            '\0' => Just "\\0"
+                            '\'' => Just "\\'"
+                            '"' => Just "\\\""
+                            '\r' => Just "\\r"
+                            '\n' => Just "\\n"
+                            _ => Nothing
 
 export
 lift : Maybe (Core a) -> Core (Maybe a)

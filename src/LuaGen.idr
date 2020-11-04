@@ -232,7 +232,10 @@ mutual
   stringifyString : String -> String --this way we do not rely on specific escape patterns of the compiler backend
   stringifyString str =
     let vstr = show str in --unpack is necessary as function stack size is very limited in lua
-        "utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ trimQuotes vstr ++ "--]]"
+        fromMaybe ("utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ trimQuotes vstr ++ "--]]")
+                  ((\str => fastAppend ["\"", str, "\""]) <$> escapeStringLua str) -- Try to escape simple ascii strings,
+                                                                        -- otherwise fall back to `unpack`
+                  -- TODO lua 5.3 supports unicode escape sequences, use them
 
   data AppPrec = Lower | Higher
   appPrec : LuaExpr -> AppPrec

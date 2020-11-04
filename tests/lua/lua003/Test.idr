@@ -122,3 +122,4 @@ main = do
   putStrLn $ show from
   putStrLn $ show $ (the Integer (2 - 2)) == 0
   putStrLn $ show $ factorial 1000 1
+  putStrLn "unicode string: lambda λ, sigma Σ, integral ∫, cyrillic F Ф"
