@@ -87,8 +87,7 @@ contains = flip SortedSet.contains
 
 %hide SortedSet.contains
 
--- `x` <= `y`: reflexive, transitive, antisymmetric (in x ~ y) relation. Forms a total order
--- forall x, y (x <= y) `xor` (Not $ x <= y)
+-- `x` <= `y`: ?reflexive, transitive, antisymmetric relation. Forms a total order
 public export
 data Lte : (defs : SortedMap Name (NamedDef, SortedSet Name)) -> (x : (Name, NamedDef)) -> (y : (Name, NamedDef)) -> Type where
   MkLte : {x, y, defs : _} ->
@@ -112,10 +111,9 @@ public export
          (Right notA, Right notB) => Just $ MkLte (Right $ Right (notA, notB))
          _ => Nothing
 
--- The function type does not inforce the type requirements, r must be a total order
 public export
-quicksort : (mbRel : MaybeRelated a r) => List a -> List a
+quicksort : {defs : SortedMap Name (NamedDef, SortedSet Name)} -> List (Name, NamedDef) -> List (Name, NamedDef)
 quicksort (y :: xs)
- = let (lte, gt) = partition (\x => isJust $ mbRelated {r} x y) xs in
-    quicksort {r} lte ++ (y :: quicksort {r} gt)
+ = let (lte, gt) = partition (\x => isJust $ mbRelated {r = Lte defs} x y) xs in
+    quicksort {defs} lte ++ (y :: quicksort {defs} gt)
 quicksort [] = []

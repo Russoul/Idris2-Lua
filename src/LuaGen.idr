@@ -1325,7 +1325,7 @@ translate defs term = do
   let ndefs = (\(n, _, d) => (n, d)) <$> ndefs
   let ndefs = defsUsedByNamedCExp ctm (defsToUsedMap ndefs) -- work through relevant names only
   let ndefsMap = defsToUsedMap ndefs
-  let ndefs = quicksort {r = Lte ndefsMap} ndefs -- sort names by dependency order
+  let ndefs = quicksort {defs = ndefsMap} ndefs -- sort names by dependency order
   --printDebug ndefs
   s <- newRef Stack (MkStackSt [] frameLowest indexLowest)
   pr <- newRef Preamble (MkPreambleSt empty)
