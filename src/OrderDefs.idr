@@ -14,6 +14,8 @@ import LuaCommon
 
 -- Borrowed from the Node backend
 mutual
+  ||| Returns all names referenced within the given expression.
+  ||| Names are not chased down transitivily.
   export
   usedNames : NamedCExp -> SortedSet Name
   usedNames (NmLocal fc n) = empty
@@ -38,35 +40,43 @@ mutual
   usedNamesConstAlt : NamedConstAlt -> SortedSet Name
   usedNamesConstAlt (MkNConstAlt c exp) = usedNames exp
 
+||| Returns all names referenced within the given definition.
+||| Names are not chased down transitivily.
 usedNamesDef : NamedDef -> SortedSet Name
 usedNamesDef (MkNmFun args exp) = usedNames exp
 usedNamesDef (MkNmError exp) = usedNames exp
 usedNamesDef (MkNmForeign cs args ret) = empty
 usedNamesDef (MkNmCon _ _ _) = empty
 
-defsToUsedMap : List (Name, NamedDef) -> SortedMap Name (SortedSet Name)
+||| For each definition finds names referenced within it.
+export
+defsToUsedMap : List (Name, NamedDef) -> SortedMap Name (NamedDef, SortedSet Name)
 defsToUsedMap defs =
-  fromList $ (\(n, d) => (n, usedNamesDef d)) <$> defs
+  fromList $ (\(n, d) => (n, (d, usedNamesDef d))) <$> defs
 
-calcUsed : SortedSet Name -> SortedMap Name (SortedSet Name) -> List Name -> SortedSet Name
+||| The first argument is for local storage. Initialized with the empty set.
+||| The second argument is a map from names to their dependencies.
+||| The third argument is a set of names
+||| Returns a set of names that the given names depend on.
+calcUsed : SortedSet Name -> SortedMap Name (NamedDef, SortedSet Name) -> List Name -> SortedSet Name
 calcUsed done d [] = done
 calcUsed done d xs =
-  let used_in_xs = foldl (\x, y => union x (fromMaybe empty y)) empty $ (\z => lookup z d) <$> xs
+  let used_in_xs = foldl (\x, y => union x (fromMaybe empty (snd <$> y))) empty $ (\z => lookup z d) <$> xs
       new_done   = union done (fromList xs)
   in calcUsed (new_done) d (SortedSet.toList $ difference used_in_xs new_done)
 
-calcUsedDefs : List Name -> List (Name, NamedDef) -> List (Name, NamedDef)
-calcUsedDefs names defs =
-  let usedNames = calcUsed empty (defsToUsedMap defs) names
-  in List.filter (\(n, _) => contains n usedNames) defs
+calcUsedDefs : List Name -> SortedMap Name (NamedDef, SortedSet Name) -> List (Name, (NamedDef, SortedSet Name))
+calcUsedDefs names usedMap =
+  let usedNames = calcUsed empty usedMap names
+  in List.filter (\(n, _) => contains n usedNames) (toList usedMap)
 
 export
-defsUsedByNamedCExp : NamedCExp -> List (Name, NamedDef) -> List (Name, NamedDef)
-defsUsedByNamedCExp exp defs = calcUsedDefs (SortedSet.toList $ usedNames exp) defs
+defsUsedByNamedCExp : NamedCExp -> SortedMap Name (NamedDef, SortedSet Name) -> List (Name, NamedDef)
+defsUsedByNamedCExp exp usedMap = map (mapSnd fst) $ calcUsedDefs (SortedSet.toList $ usedNames exp) usedMap
 
 export
-used : (Name, NamedDef) -> List (Name, NamedDef) -> SortedSet Name
-used (n, _) defs = fromList $ map fst $ calcUsedDefs [n] defs
+used : (Name, NamedDef) -> SortedMap Name (NamedDef, SortedSet Name) -> SortedSet Name
+used (n, _) usedMap = fromList $ map fst $ calcUsedDefs [n] usedMap
 
 public export
 interface MaybeRelated t r where
@@ -80,7 +90,7 @@ contains = flip SortedSet.contains
 -- `x` <= `y`: reflexive, transitive, antisymmetric (in x ~ y) relation. Forms a total order
 -- forall x, y (x <= y) `xor` (Not $ x <= y)
 public export
-data Lte : (defs : List (Name, NamedDef)) -> (x : (Name, NamedDef)) -> (y : (Name, NamedDef)) -> Type where
+data Lte : (defs : SortedMap Name (NamedDef, SortedSet Name)) -> (x : (Name, NamedDef)) -> (y : (Name, NamedDef)) -> Type where
   MkLte : {x, y, defs : _} ->
           let a = contains (used y defs) (fst x)
               b = contains (used x defs) (fst y)
