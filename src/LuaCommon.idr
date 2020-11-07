@@ -8,6 +8,9 @@ import Data.List
 import Data.String.Extra as StrExtra
 import Data.Strings
 import Data.Vect
+import Data.List
+import Data.List1
+import Data.Buffer
 import Utils.Hex
 
 infixl 100 |>
@@ -20,79 +23,130 @@ public export
 data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
 
 namespace Strings
-   public export
-   ||| replaces all occurances of literal @lit
-   ||| in string @str
-   removeAll :
-         (lit : String)
-      -> (str : String)
-      -> String
-   removeAll lit str with (str == "")
-      removeAll lit str | False =
-         if isPrefixOf lit str
-            then removeAll lit (substr (length lit) (length str `minus` length lit) str)
-            else case strUncons str of
-                      Just (head, rest) => strCons head (removeAll lit rest)
-                      Nothing => ""
-      removeAll lit str | True = ""
+  FromString (List Char) where
+    fromString = fastUnpack
+
+  public export
+  record String1 where
+    constructor MkString1
+    head : Char
+    tail : String
+
+  public export
+  data NonEmptyString : String -> Type where
+    ItIsNonEmptyString : (0 prf : IsJust (strUncons str)) -> NonEmptyString str
+
+  public export
+  toString1 : (str : String) -> {auto 0 prf : NonEmptyString str} -> String1
+  toString1 str @{ItIsNonEmptyString itIs} with (strUncons str)
+   toString1 str @{ItIsNonEmptyString ItIsJust} | Just (x, xs) = MkString1 x xs
+
+  public export
+  toList1 : (str : String) -> {auto 0 prf : NonEmptyString str} -> List1 Char
+  toList1 str @{ItIsNonEmptyString itIs} with (strUncons str)
+   toList1 str @{ItIsNonEmptyString ItIsJust} | Just (x, xs) = x ::: fastUnpack xs
+
+  public export
+  ||| Removes all occurances of the literal @lit
+  ||| in the string @str
+  removeAll :
+        (lit : String)
+     -> (str : String)
+     -> String
+  removeAll lit str with (str == "")
+     removeAll lit str | False =
+        if isPrefixOf lit str
+           then removeAll lit (substr (length lit) (length str `minus` length lit) str)
+           else case strUncons str of
+                     Just (head, rest) => strCons head (removeAll lit rest)
+                     Nothing => ""
+     removeAll lit str | True = ""
+
+  ||| TODO Useful function to add to `base` ?
+  ||| Splits the subject string into parts by the delimiter.
+  public export
+  split : (delim : List1 Char) -> (subject : List Char) -> List1 (List Char)
+  split delim subject =
+    reverse $ splitHelper delim subject [] []
+    where
+      splitHelper : List1 Char -> List Char -> List Char -> List (List Char) -> List1 (List Char)
+      splitHelper delim [] acc store = (reverse acc) ::: store
+      splitHelper delim str@(x :: xs) acc store =
+        case isPrefixOf (forget delim) str of
+          -- Dropping a non-zero sequence of characters from `str` ensures that `str` is structurally smaller with each successive call
+          True => splitHelper delim (assert_smaller str $ drop (length $ forget delim) str) [] (reverse acc :: store)
+          False => splitHelper delim xs (x :: acc) store
+
+  public export %inline
+  indent : Nat -> String
+  indent n = StrExtra.replicate (2 * n) ' '
+
+  public export
+  trimLeft : List Char -> List Char
+  trimLeft (' ' :: xs) = trimLeft xs
+  trimLeft xs = xs
+
+  public export %inline
+  trim : List Char -> List Char
+  trim = reverse . trimLeft . reverse . trimLeft
 
 
 namespace LuaVersion
 
-   export
-   index : LuaVersion -> Int
-   index Lua51 = 51
-   index Lua52 = 52
-   index Lua53 = 53
-   index Lua54 = 54
+  export
+  index : LuaVersion -> Int
+  index Lua51 = 51
+  index Lua52 = 52
+  index Lua53 = 53
+  index Lua54 = 54
 
-   export
-   fromIndex : Int -> Maybe LuaVersion
-   fromIndex 51 = Just Lua51
-   fromIndex 52 = Just Lua52
-   fromIndex 53 = Just Lua53
-   fromIndex 54 = Just Lua54
-   fromIndex _  = Nothing
+  export
+  fromIndex : Int -> Maybe LuaVersion
+  fromIndex 51 = Just Lua51
+  fromIndex 52 = Just Lua52
+  fromIndex 53 = Just Lua53
+  fromIndex 54 = Just Lua54
+  fromIndex _  = Nothing
 
-   export
-   Eq LuaVersion where
-      Lua51 == Lua51 = True
-      Lua52 == Lua52 = True
-      Lua53 == Lua53 = True
-      Lua54 == Lua54 = True
-      _     ==     _ = False
+  export
+  Eq LuaVersion where
+     Lua51 == Lua51 = True
+     Lua52 == Lua52 = True
+     Lua53 == Lua53 = True
+     Lua54 == Lua54 = True
+     _     ==     _ = False
 
-   export
-   Show LuaVersion where
-      show ver =
-       let index = index ver
-           major = index `div` 10
-           minor = index `mod` 10
+  export
+  Show LuaVersion where
+     show ver =
+      let index = index ver
+          major = index `div` 10
+          minor = index `mod` 10
+      in
+          "Lua" ++ show major ++ "." ++ show minor
+
+  export
+  Ord LuaVersion where
+     compare v v' = compare (index v) (index v')
+
+
+
+  export
+  parseLuaVersion : String -> Maybe LuaVersion
+  parseLuaVersion str = helper ((trim . toLower) str)
+  where
+    helper : String -> Maybe LuaVersion
+    helper x =
+       let noprefix =
+              if isPrefixOf "lua" x
+                then drop 3 x
+                else x
+           nodots = removeAll "." noprefix
+           nodashes = removeAll "-" nodots
+           firstTwo = take 2 nodashes
        in
-           "Lua" ++ show major ++ "." ++ show minor
-
-   export
-   Ord LuaVersion where
-      compare v v' = compare (index v) (index v')
-
-
-
-   export
-   parseLuaVersion : String -> Maybe LuaVersion
-   parseLuaVersion str = helper ((trim . toLower) str)
-   where
-      helper : String -> Maybe LuaVersion
-      helper x =
-         let noprefix =
-                if isPrefixOf "lua" x
-                  then drop 3 x
-                  else x
-             nodots = removeAll "." noprefix
-             nodashes = removeAll "-" nodots
-             firstTwo = take 2 nodashes
-         in
-             do int <- parseInteger {a = Int} firstTwo
-                fromIndex int
+           do int <- parseInteger {a = Int} firstTwo
+              fromIndex int
 
 
 
@@ -119,7 +173,7 @@ namespace Data.List
 
 namespace Data.Maybe
   public export %inline
-  orElse : (maybe : Maybe a) -> Lazy a -> a
+  orElse : (maybe : Maybe a) -> (def : Lazy a) -> a
   orElse = flip fromMaybe
 
 public export
@@ -175,24 +229,19 @@ validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
 
     validateKeyword : String -> String
     validateKeyword mbkw =
-       case find (== mbkw) luaKeywords of
-          Just kw => "_kw_" ++ kw ++ "_"
-          Nothing => mbkw
+      case find (== mbkw) luaKeywords of
+        Just kw => "_kw_" ++ kw ++ "_"
+        Nothing => mbkw
 
 public export
 parseEnvBool : String -> Maybe Bool
 parseEnvBool str =
-   case toLower str of
-      "true" => Just True
-      "1" => Just True
-      "false" => Just False
-      "0" => Just False
-      _ => Nothing
-
-
-public export
-indent : Nat -> String
-indent n = StrExtra.replicate (2 * n) ' '
+  case toLower str of
+    "true" => Just True
+    "1" => Just True
+    "false" => Just False
+    "0" => Just False
+    _ => Nothing
 
 ||| Escape some of the ascii codes, fail on unicode, as
 ||| not all supported lua versions have unicode escape sequences
@@ -211,24 +260,45 @@ escapeStringLua s = concat <$> traverse okchar (fastUnpack s)
                             '\n' => Just "\\n"
                             _ => Nothing
 
-export
-lift : Maybe (Core a) -> Core (Maybe a)
-lift Nothing = pure Nothing
-lift (Just x) = x >>= pure . Just
+||| Transforms `x, y, ... w => body` into `function(x) return function(y) ... return function(w) return body end ... end end
+public export
+curryTransform : (vars : List (List Char)) -> (body : List Char) -> List Char
+curryTransform [] body = body
+curryTransform (x :: xs) body = "function(" ++ x ++ ") return " ++ curryTransform xs body ++ " end"
+
+-- public export
+-- escapeString : String -> String
+-- escapeString s = concatMap okchar (unpack s)
+--   where
+--     okchar : Char -> String
+--     okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
+--                   then cast c
+--                   else case c of
+--                             '\0' => "\\0"
+--                             '\'' => "\\'"
+--                             '"' => "\\\""
+--                             '\r' => "\\r"
+--                             '\n' => "\\n"
+--                             other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
+
+export %inline
+sequenceMaybe : Maybe (Core a) -> Core (Maybe a)
+sequenceMaybe Nothing = pure Nothing
+sequenceMaybe (Just x) = x >>= pure . Just
 
 public export
 record StrBuffer where
-   constructor MkStrBuffer
-   get : Buffer
-   offset : Int
+  constructor MkStrBuffer
+  get : Buffer
+  offset : Int
 
 export
 allocStrBuffer : Int -> Core StrBuffer
 allocStrBuffer initialSize =
-   do
-      (Just buf) <- coreLift $ newBuffer initialSize
-         | _ => throw (UserError "Could not allocate buffer")
-      pure (MkStrBuffer buf 0)
+  do
+     (Just buf) <- coreLift $ newBuffer initialSize
+        | _ => throw (UserError "Could not allocate buffer")
+     pure (MkStrBuffer buf 0)
 
 export
 writeStr :
@@ -237,31 +307,31 @@ writeStr :
    -> String
    -> Core ()
 writeStr marker str =
-   do
-      let strlen = stringByteLength str
-      strbuf <- get marker
-      raw <- ensureSize strbuf.get strbuf.offset strlen
-      coreLift $ setString raw strbuf.offset str
-      put marker (MkStrBuffer raw (strbuf.offset + strlen))
-      pure ()
+  do
+     let strlen = stringByteLength str
+     strbuf <- get marker
+     raw <- ensureSize strbuf.get strbuf.offset strlen
+     coreLift $ setString raw strbuf.offset str
+     put marker (MkStrBuffer raw (strbuf.offset + strlen))
+     pure ()
 
    where
-      ensureSize : Buffer -> Int -> Int -> Core Buffer
-      ensureSize buf offset strlen =
-         let bufLen = !(coreLift $ rawSize buf) in
-             if offset + strlen > bufLen
-                then do
-                   (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
-                     | _ => throw (UserError "Could not allocate buffer")
-                   pure buf
-             else
-                pure buf
+     ensureSize : Buffer -> Int -> Int -> Core Buffer
+     ensureSize buf offset strlen =
+        let bufLen = !(coreLift $ rawSize buf) in
+            if offset + strlen > bufLen
+               then do
+                  (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
+                    | _ => throw (UserError "Could not allocate buffer")
+                  pure buf
+            else
+               pure buf
 
 -- TODO switch to LazyList String ?
 public export
 data DeferedStr : Type where
-   Nil : DeferedStr
-   (::) : Lazy a -> {auto prf : Either (a = String) (a = DeferedStr)} -> DeferedStr -> DeferedStr
+  Nil : DeferedStr
+  (::) : Lazy a -> {auto prf : Either (a = String) (a = DeferedStr)} -> DeferedStr -> DeferedStr
 
 export
 pure : String -> DeferedStr
@@ -275,11 +345,11 @@ traverse_ _ [] = pure ()
 
 
 namespace DeferedStr
-   export
-   sepBy : List (DeferedStr) -> String -> DeferedStr
-   sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
-   sepBy (x :: []) _ = [x]
-   sepBy [] _ = []
+  export
+  sepBy : List (DeferedStr) -> String -> DeferedStr
+  sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
+  sepBy (x :: []) _ = [x]
+  sepBy [] _ = []
 
 
 --it is actually more general than that, but whatever
@@ -292,3 +362,9 @@ export
 forAll : (a -> Bool) -> List a -> Bool
 forAll f (x :: xs) = f x && forAll f xs
 forAll f [] = True
+
+namespace Maybe
+  -- TODO add to `base` ?
+  public export
+  filter : (f : a -> Bool) -> (mb : Maybe a) -> Maybe a
+  filter f mb = mb >>= \x => toMaybe (f x) x

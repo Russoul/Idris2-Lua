@@ -12,8 +12,9 @@ import Data.Bool.Extra
 import Data.Buffer
 import Data.List
 import Data.List1
-import Data.SortedSet
+import Data.Maybe
 import Data.SortedMap
+import Data.SortedSet
 import Data.String.Extra
 import Data.Strings
 import Data.Vect
@@ -157,11 +158,6 @@ stringifyNameMangle (Resolved x) = "res__" ++ show x
 stringifyName : Visibility -> Name -> String
 stringifyName Local name = stringifyNameMangle name
 stringifyName Global name = "idris[" ++ show (stringifyNameGlobal name) ++ "]"
-
-%hide LuaCommon.indent
-%inline
-indent : Nat -> String
-indent n = replicate (2 * n) ' '
 
 mutual
   stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
@@ -1003,8 +999,24 @@ mutual -- TODO try remove in favour of forward declarions ?
         (def, req) = break (== '|') def in
         Just (def, if req == "" then Nothing else Just $ processRequire $ drop 1 req)
 
-  --Foreign definition
-  --may be implemented as a function / binding
+  doCurryTransform : (def : String) -> (erased : List Nat) -> Maybe String
+  doCurryTransform def erased =
+    case split (toList1 "=>") (fastUnpack def) of
+      argsAll ::: [body] =>
+        let args = split (toList1 ",") argsAll
+            trimmedArgs = (mapMaybe (filter (/= []) . Just . trim) $ forget args) in
+          Just $ fastPack $ curryTransform (addErasedArgs trimmedArgs erased) (trim body)
+      _ => Nothing
+    where
+      addErasedArgs : (args : List (List Char)) -> (erased : List Nat) -> List (List Char)
+      addErasedArgs xs (0 :: is) = ['_'] :: addErasedArgs xs (map (`minus` 1) is)
+      addErasedArgs (x :: xs) ((S i) :: is) = x :: addErasedArgs xs (i :: map (`minus` 1) is)
+      addErasedArgs [] is = replicate (length is) ['_']
+      addErasedArgs xs [] = xs
+
+  preprocess : {auto defs : Ref Ctxt Defs} -> (foreignName : Name) -> (def : String) -> Core String
+  preprocess name def = pure $ doCurryTransform def !(getErased name) `orElse` def
+
   processForeignDef :
           {auto defs : Ref Ctxt Defs}
        -> {auto opts : COpts}
@@ -1018,9 +1030,9 @@ mutual -- TODO try remove in favour of forward declarions ?
    case find (== name) foreignImpls of
         Just _ => pure () -- implemented internally
         Nothing =>
-           do --TODO refine this, use special namespace (table) for userdefined assignments
-              let ((def, maybeReq), replace)
+           do let ((def, maybeReq), replace)
                   = ((\x => (x, True)) <$> (searchForeign hints)) `orElse` ((stringifyName Global name, Nothing), False)
+              def <- preprocess name def
               logLine $ "using %foreign " ++ def
               case maybeReq of
                    (Just packs) => do logLine $ "requiring " ++ (show $ map fst packs)
@@ -1113,7 +1125,7 @@ mutual -- TODO try remove in favour of forward declarions ?
       let table = LTable (replicate (alts |> length) (LDoNothing, LNil)) --preallocate space
       tableVar <- pushLocal
       let assignments = (\(k, v) => LAssign Nothing (LIndex tableVar k) v) <$> alts
-      mdef <- lift $ processExpr <$> def
+      mdef <- sequenceMaybe $ processExpr <$> def
       let indexed = LIndex tableVar (LIndex conVar (LString "tag"))
       indexedVar <- pushLocal
       (blockB, cas) <- mkCase [(justReturn indexedVar, justReturn (LApp indexedVar []))] mdef
@@ -1131,7 +1143,7 @@ mutual -- TODO try remove in favour of forward declarions ?
       let table = LTable (replicate (alts |> length) (LDoNothing, LNil)) --preallocate space
       tableVar <- pushLocal
       let assignments = (\(k, v) => LAssign Nothing (LIndex tableVar k) v) <$> alts
-      mdef <- lift $ processExpr <$> def
+      mdef <- sequenceMaybe $ processExpr <$> def
       index <-
           (\alt => constCaseIndex alt constVar)
           <$> head' rawalts `orElse` pure luaNull --orElse is in case there is only default branch of case clause
@@ -1255,6 +1267,14 @@ mutual -- TODO try remove in favour of forward declarions ?
   processTag n Nothing = stringifyName Global n
   processTag _ (Just i) = show i
 
+  getErased : {auto refs : Ref Ctxt Defs}
+           -> Name
+           -> Core (List Nat)
+  getErased name =
+    do Just def <- lookupCtxtExact name (gamma !(get Ctxt))
+        | _ => throw (InternalError $ "[Lua] Could not find def: " ++ show !(toFullNames name))
+       pure def.eraseArgs
+
   processDef :
            {auto c: Ref Stack StackSt}
         -> {auto opts : COpts}
@@ -1275,6 +1295,7 @@ mutual -- TODO try remove in favour of forward declarions ?
                                 <+> LReturn expr) [] -- paste code block into the function body,
                                                      -- we have to wrap the code in a lambda and then immediately call it
                                                      -- to make sure the block & the return expr form a valid Lua expression
+                                                     -- TODO don't do this if the body is already wrapped in at least one function
     where
       mkFnDecl : Name -> List Name -> LuaExpr -> LuaExpr
       mkFnDecl n [] expr = LAssign (Just Global) (LGVar n) expr

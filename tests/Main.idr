@@ -26,7 +26,7 @@ chezTests
       "reg001"]
 
 luaTests : List String
-luaTests = ["lua001", "lua002", "lua003", "lua004"]
+luaTests = ["lua001", "lua002", "lua003", "lua004", "lua005"]
 
 ------------------------------------------------------------------------
 -- Options
