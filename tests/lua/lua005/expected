@@ -17,4 +17,5 @@ abc 22
   tag = "1"
 }
 abcdef
+%MkWorld
 Main> Bye for now!

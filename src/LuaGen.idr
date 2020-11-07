@@ -1380,8 +1380,9 @@ translate defs term = do
              , "  idris.noRequire  = " ++ (toLower . show) (opts |> noRequire |> get) ++ "\n"
              , "  ", support , "\n"
              , "end\n"
-             , "local idris = idris"
-             , "\n---------- PREAMBLE DEFS ----------\n"
+             , "local idris = idris\n"
+             , "local W = idris.W\n"
+             , "---------- PREAMBLE DEFS ----------\n"
              , join "\n" (preamble |> values)
              , "\n---------- CTX DEFS ----------\n"
              , stringify Z con_cdefs

@@ -15,6 +15,9 @@ end
 idris.error = error
 idris.print = print
 idris["os.exit"] = os.exit
+idris.W = {}
+
+setmetatable(idris.W, {__tostring=function(_) return "%MkWorld" end})
 
 -------------------------------------
 ---- Cross-Version Compatibility ----      --possible Lua version range is [5.1; 5.4]
