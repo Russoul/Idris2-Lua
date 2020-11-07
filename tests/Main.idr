@@ -19,14 +19,14 @@ import System.Path
 chezTests : List String
 chezTests
    = ["chez001", "chez002", "chez003", {-"chez004" (Bits),-} "chez005", "chez006",
-      "chez007", "chez008", "chez009", {- "chez010" (callback),-} "chez011", "chez012",
-      {-"chez013" (FFI field),-} {-"chez014" (Network ffi),-} {- "chez015" Int overflow, should work -} "chez016", "chez017", "chez018",
-      {-"chez019", "chez020", "chez021", "chez022", "chez023", "chez024", -}
-      "chez025", {- "chez026 ???" -} "chez027",
+      "chez007", "chez008", "chez009", {- "chez010" (C callback),-} "chez011", "chez012",
+      {-"chez013" (FFI Field),-} {-"chez014" (FFI Network),-} {- "chez015" (Int overflow) -} "chez016", "chez017", "chez018",
+      "chez019", {-"chez020", "chez021", "chez022", "chez023", "chez024", -}
+      "chez025", "chez026", "chez027",
       "reg001"]
 
 luaTests : List String
-luaTests = ["lua001", "lua002"]
+luaTests = ["lua001", "lua002", "lua003", "lua004"]
 
 ------------------------------------------------------------------------
 -- Options

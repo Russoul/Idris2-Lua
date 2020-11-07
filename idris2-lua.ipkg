@@ -4,6 +4,7 @@ depends = idris2, contrib, network
 
 modules =
   LuaCommon,
+  OrderDefs,
   LuaAst,
   LuaGen
 

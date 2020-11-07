@@ -3,11 +3,11 @@ module LuaCommon
 
 import Core.Core
 import Core.Name
-import Data.Strings
-import Data.String.Extra as StrExtra
-import Data.Vect
-import Data.List
 import Data.Buffer
+import Data.List
+import Data.String.Extra as StrExtra
+import Data.Strings
+import Data.Vect
 import Utils.Hex
 
 infixl 100 |>
@@ -97,18 +97,30 @@ namespace LuaVersion
 
 
 namespace Data.List
-  export
+  public export
   unzip : (xs : List (a, b)) -> (List a, List b)
   unzip ((l, r) :: xs) =
     let (ls, rs) = unzip xs in
         (l :: ls, r :: rs)
   unzip [] = ([], [])
 
+  public export
+  contains : Eq a => List a -> a -> Bool
+  contains [] _ = False
+  contains (x :: xs) x' = x == x' || contains xs x
+
+  public export
+  group : {n : _} -> List a -> Vect n (a -> Bool) -> Vect n (List a)
+  group [] _ = replicate _ []
+  group (x :: xs) fs
+   = zipWith (++) (map (\f => fromMaybe [] (toMaybe (f x) [x])) fs) (group xs fs)
+
+
+
 namespace Data.Maybe
-  export
+  public export %inline
   orElse : (maybe : Maybe a) -> Lazy a -> a
-  orElse Nothing x = x
-  orElse (Just x) _ = x
+  orElse = flip fromMaybe
 
 public export
 luaKeywords : List String
@@ -182,21 +194,22 @@ public export
 indent : Nat -> String
 indent n = StrExtra.replicate (2 * n) ' '
 
-
--- public export
--- escapeString : String -> String
--- escapeString s = concatMap okchar (unpack s)
---   where
---     okchar : Char -> String
---     okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
---                   then cast c
---                   else case c of
---                             '\0' => "\\0"
---                             '\'' => "\\'"
---                             '"' => "\\\""
---                             '\r' => "\\r"
---                             '\n' => "\\n"
---                             other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
+||| Escape some of the ascii codes, fail on unicode, as
+||| not all supported lua versions have unicode escape sequences
+public export
+escapeStringLua : String -> Maybe String
+escapeStringLua s = concat <$> traverse okchar (fastUnpack s)
+  where
+    okchar : Char -> Maybe String
+    okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
+                  then Just (cast c)
+                  else case c of
+                            '\0' => Just "\\0"
+                            '\'' => Just "\\'"
+                            '"' => Just "\\\""
+                            '\r' => Just "\\r"
+                            '\n' => Just "\\n"
+                            _ => Nothing
 
 export
 lift : Maybe (Core a) -> Core (Maybe a)
@@ -244,6 +257,7 @@ writeStr marker str =
              else
                 pure buf
 
+-- TODO switch to LazyList String ?
 public export
 data DeferedStr : Type where
    Nil : DeferedStr

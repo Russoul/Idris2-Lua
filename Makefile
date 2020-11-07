@@ -26,22 +26,24 @@ else
 endif
 
 
-.PHONY: all idris2-lua-exec ${TARGET} clean check-env test
+.PHONY: all idris2-lua-exec ${TARGET} clean-tests clean check-env test
 
 all: ${TARGET} test
 
 idris2-lua-exec: ${TARGET}
 
-${TARGET}: 
+${TARGET}:
 	${IDRIS2} --build ${IPKG}
 
-clean: 
+clean-tests:
+	$(RM) -r tests/build
+
+clean: clean-tests
 	$(RM) -r build
 	$(RM) support/lua/*.so
 	$(RM) support/lua/*.o
-	$(RM) -r tests/build
 
-install: install-idris2-lua install-support 
+install: install-idris2-lua install-support
 
 install-idris2-lua:
 	mkdir -p ${PREFIX}/bin/
@@ -55,10 +57,10 @@ endif
 install-support: check-env
 	mkdir -p ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 	cd support/lua; \
-	luarocks make --lua-version=$(LuaVersion) 
+	luarocks make --lua-version=$(LuaVersion)
 	install support/lua/idris2-lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 
-test: install-support
+test: clean-tests install-support
 	make -C tests IDRIS2_LUA=../${TARGET}
 
 

@@ -1,0 +1,43 @@
+1/1: Building Test (Test.idr)
+Test> 5
+1"a"["b"]2[3, 4, 5]
+m1 6
+m2 "c"["d", "e"]1
+m3 m2 "2"["p", "t"]0
+m3 m3 m3 1"1"["2", "3", "a"]0[1, 2, 3]
+cb
+A1
+A8
+A6
+Right ""
+True
+[38;2;255;100;0mThis is error[0m
+257
+"\ESC[38;2;255;0;0mred\n\ESC[0m\ESC[38;2;0;255;0mgreen\n\ESC[0m\ESC[38;2;0;0;255mblue\ESC[0m"
+buf size 71
+buf contents:
+[38;2;255;0;0mred
+[0m[38;2;0;255;0mgreen
+[0m[38;2;0;0;255mblue[0m
+init size0
+next size8
+next size16
+next size24
+next size32
+next size40
+next size48
+next size56
+next size64
+next size72
+next size80
+0
+1
+9
+0
+1
+9
+130
+hi there !
+русский язык-567
+-241.123456789
+Test> Bye for now!
