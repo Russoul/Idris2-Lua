@@ -5,7 +5,7 @@ namespace Lua
   plus : Int -> Int -> Int
 
   export -- there is now also a `W` local variable, accessible anywhere from FFI for convenience
-         -- local W = '%MkWorld'
+         -- `W` is a special table standing for the %MkWorld value
   %foreign "callback, _ => callback('abc')(22)(W)"
   callback : (callback : String -> Int -> PrimIO String) -> PrimIO String
 
