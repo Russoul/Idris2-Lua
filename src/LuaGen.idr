@@ -160,14 +160,14 @@ stringifyName Local name = stringifyNameMangle name
 stringifyName Global name = "idris[" ++ show (stringifyNameGlobal name) ++ "]"
 
 mutual
-  stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
+  stringifyBinOp : Nat -> String -> LuaExpr -> LuaExpr -> DeferredStr
   stringifyBinOp n op x y = [stringify n x
                             , " "
                             , op
                             , " "
                             ,stringify (S n) y]
 
-  stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> DeferedStr
+  stringifyMethodApp : Nat -> String -> LuaExpr -> LuaExpr -> DeferredStr
   stringifyMethodApp n method x y = [stringify n x
                                     , ":", method
                                     , "("
@@ -178,7 +178,7 @@ mutual
      Nat
    -> (fn : String)
    -> Vect n LuaExpr
-   -> DeferedStr
+   -> DeferredStr
   stringifyFnApp n fn args =
     [ fn
     , "("
@@ -195,7 +195,7 @@ mutual
      -> PrimFn n
      -> Vect n LuaExpr
      -> LuaVersion
-     -> DeferedStr
+     -> DeferredStr
   stringifyBitOp n (ShiftL IntType) [x, y] ver with (ver >= Lua53)
      stringifyBitOp n (ShiftL IntType) [x, y] ver | True = stringifyBinOp n "<<" x y
      stringifyBitOp n (ShiftL IntType) [x, y] ver | False = stringifyFnApp n "bit32.lshift" [x, y]
@@ -262,7 +262,7 @@ mutual
         {auto copts : COpts}
      -> (n : Nat)
      -> LuaExpr
-     -> DeferedStr
+     -> DeferredStr
   stringify _ (LLVar name) =
     [stringifyName Local name]
   stringify _ (LGVar name) =
@@ -322,7 +322,7 @@ mutual
   stringify n (LIndex e i) =
     [ stringify n e
     , "["
-    , the DeferedStr
+    , the DeferredStr
        $ let general = stringify (1 + n) i in
           case i of
                (LString str) => let chars = unpack str in
@@ -472,41 +472,6 @@ mutual
   stringify n (LPrimFn op args) = stringify n $ mkErrorAst $ "unsupported primitive function: " ++ show op
 
 
--- replaceNames : List(Name, LuaExpr) -> LuaExpr -> LuaExpr
--- replaceNames names (LVar x) =
---   case lookup x names of
---        Nothing => LVar x
---        Just e => e
--- replaceNames names (LDeclVar v n) = LDeclVar v n
--- replaceNames names (LLambda args body) =
---   LLambda args $ replaceNames names body
--- replaceNames names (LApp x args) =
---   LApp (replaceNames names x) (replaceNames names <$> args)
--- replaceNames names (LPrimFn name args) = LPrimFn name (replaceNames names <$> args)
--- replaceNames names LNil = LNil
--- replaceNames names LTrue = LTrue
--- replaceNames names LFalse = LFalse
--- replaceNames names (LNumber x) = LNumber x
--- replaceNames names (LString x) = LString x
--- replaceNames names (LBigInt x) = LBigInt x
--- replaceNames names (LIndex expr key) = LIndex (replaceNames names expr) (replaceNames names key)
--- replaceNames names (LTable ys) =
---   LTable (map (\(key, val) => (
---                    replaceNames names key,
---                    replaceNames names val)) ys)
--- replaceNames names (LSeq x y) = LSeq (replaceNames names x) (replaceNames names y)
--- replaceNames names (LFnDecl vis name args body) = LFnDecl vis name args (replaceNames names body)
--- replaceNames names (LReturn x) = LReturn (replaceNames names x)
--- replaceNames names (LAssign Nothing x y) = LAssign Nothing (replaceNames names x) (replaceNames names y) --assignment
--- replaceNames names (LAssign (Just v) x y) = LAssign (Just v) x (replaceNames names y) --declaration with initial value
--- replaceNames names (LIfThenElse cond tr fa) =
---   LIfThenElse (replaceNames names cond) (replaceNames names tr)
---     (replaceNames names fa)
--- replaceNames names LBreak = LBreak
--- replaceNames names (LWhile cond body) = LWhile (replaceNames names cond) (replaceNames names body)
--- replaceNames names LDoNothing = LDoNothing
--- replaceNames names (LComment s) = LComment s
-
 record StackFrame where   --each function has its own table that represents its stackframe (function arguments not included)
   constructor MkStackFrame--each inner table has a unique (relative to all outer functions) name
   get : Int               --each table is indexed by consecutive integer values starting from 1 (because lua)
@@ -532,7 +497,6 @@ indexLowest = 1
 
 frameName : StackFrame -> Name
 frameName (MkStackFrame i) = MN "frame" i
-
 
 declFrameTable : StackFrame -> Int -> LuaExpr
 declFrameTable frame numOfVars =
@@ -569,7 +533,7 @@ pushLocal =
     put Stack (record{nextIndex $= (+1)} s)
     pure (LIndex (LLVar (frameName frame)) (LNumber (show i)))
 
-||| returns number of local variables in popped frame
+||| Returns the number of local variables in the popped frame
 popFrame : {auto c : Ref Stack StackSt} -> Core Int
 popFrame =
   do
@@ -684,161 +648,160 @@ mkCase branches mbElse =
     blockA <- mkCaseImpl local branches mbElse
     pure (blockA, local)
 
+uninhabNS : Namespace
+uninhabNS = preludeNS <.> mkNamespace "Uninhabited"
+
+iorefNS : Namespace
+iorefNS = mkNamespace "Data.IORef"
+
+bufferNS : Namespace
+bufferNS = mkNamespace "Data.Buffer"
+
+stringsNS : Namespace
+stringsNS = mkNamespace "Data.Strings"
+
+strIterNS : Namespace
+strIterNS = mkNamespace "Data.String.Iterator"
+
+arrayNS : Namespace
+arrayNS = mkNamespace "Data.IOArray.Prims"
+
+systemNS : Namespace
+systemNS = mkNamespace "System"
+
+dirNS : Namespace
+dirNS = mkNamespace "System.Directory"
+
+infoNS : Namespace
+infoNS = mkNamespace "System.Info"
+
+fileNS : Namespace
+fileNS = mkNamespace "System.File"
+
+termNS : Namespace
+termNS = mkNamespace "Utils.Term"
+
+ioNS : Namespace
+ioNS = preludeNS <.> mkNamespace "IO"
+
+primioNS : Namespace
+primioNS = mkNamespace "PrimIO"
+
+extNames : List Name
+extNames = [
+             mkNamespacedName (Just iorefNS) "prim__newIORef"
+           , mkNamespacedName (Just iorefNS) "prim__readIORef"
+           , mkNamespacedName (Just iorefNS) "prim__writeIORef"
+           , mkNamespacedName (Just arrayNS) "prim__newArray"
+           , mkNamespacedName (Just arrayNS) "prim__arrayGet"
+           , mkNamespacedName (Just arrayNS) "prim__arraySet"
+           , mkNamespacedName (Just infoNS)  "prim__os"
+           , mkNamespacedName (Just infoNS)  "prim__codegen"
+           , mkNamespacedName (Just uninhabNS) "void"
+           , mkNamespacedName (Just ioNS) "onCollect"
+           , mkNamespacedName (Just ioNS) "onCollectAny"
+           ]
+
+foreignImpls : List Name
+foreignImpls = [
+                 ------------- Not Implemented -----------
+                 mkNamespacedName (Just $ mkNamespace "Idris.IDEMode.REPL") "prim__fdopen"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_accept"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_bind"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_create_sockaddr"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_free"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_family"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_ipv4"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_socket"
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__socket_listen"
+
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet"
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet6"
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unix"
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unspec"
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_errno"
+
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcCpu"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcReal"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeMonotonic"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeProcess"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeThread"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeUtc"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockNanosecond"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockSecond"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockValid"
+
+               , mkNamespacedName (Just ioNS) "prim__fork"
+               , mkNamespacedName (Just systemNS) "prim__setEnv"
+               , mkNamespacedName (Just systemNS) "prim__getEnvPair"
+               , mkNamespacedName (Just systemNS) "prim__unsetEnv"
+                 -------------------------------------------
+
+
+               , mkNamespacedName (Just primioNS) "prim__nullAnyPtr"
+               , mkNamespacedName (Just ioNS) "prim__putStr"
+               , mkNamespacedName (Just ioNS) "prim__putChar"
+               , mkNamespacedName (Just ioNS) "prim__getStr"
+               , mkNamespacedName (Just ioNS) "prim__getChar"
+               , mkNamespacedName (Just ioNS) "prim__getString"
+               , mkNamespacedName (Just fileNS) "prim__flush"
+               , mkNamespacedName (Just fileNS) "prim__writeLine"
+               , mkNamespacedName (Just fileNS) "prim__readLine"
+               , mkNamespacedName (Just fileNS) "prim__readChar"
+               , mkNamespacedName (Just fileNS) "prim__readChars"
+               , mkNamespacedName (Just fileNS) "prim__eof"
+               , mkNamespacedName (Just fileNS) "prim__open"
+               , mkNamespacedName (Just fileNS) "prim__close"
+               , mkNamespacedName (Just fileNS) "prim__error"
+               , mkNamespacedName (Just fileNS) "prim__fileErrno"
+               , mkNamespacedName (Just fileNS) "prim__removeFile"
+               , mkNamespacedName (Just fileNS) "prim__fileSize"
+               , mkNamespacedName (Just fileNS) "prim__fPoll"
+               , mkNamespacedName (Just fileNS) "prim__fileModifiedTime"
+               , mkNamespacedName (Just fileNS) "prim__fileStatusTime"
+               , mkNamespacedName (Just fileNS) "prim__stdin"
+               , mkNamespacedName (Just fileNS) "prim__stdout"
+               , mkNamespacedName (Just fileNS) "prim__stderr"
+               , mkNamespacedName (Just fileNS) "prim__chmod"
+               , mkNamespacedName (Just dirNS) "prim__changeDir"
+               , mkNamespacedName (Just dirNS) "prim__currentDir"
+               , mkNamespacedName (Just dirNS) "prim__createDir"
+               , mkNamespacedName (Just dirNS) "prim__removeDir"
+               , mkNamespacedName (Just dirNS) "prim__openDir"
+               , mkNamespacedName (Just dirNS) "prim__closeDir"
+               , mkNamespacedName (Just dirNS) "prim__dirEntry"
+               , mkNamespacedName (Just dirNS) "prim__fileErrno"
+               , mkNamespacedName (Just systemNS) "prim__getArgs"
+               , mkNamespacedName (Just systemNS) "prim__getEnv"
+               , mkNamespacedName (Just systemNS) "prim__exit"
+               , mkNamespacedName (Just systemNS) "prim__system"
+               , mkNamespacedName (Just stringsNS) "fastConcat"
+               , mkNamespacedName (Just stringsNS) "fastUnpack"
+               , mkNamespacedName (Just typesNS) "fastPack"
+               , mkNamespacedName (Just termNS) "prim__setupTerm"
+               , mkNamespacedName (Just termNS) "prim__getTermCols"
+               , mkNamespacedName (Just termNS) "prim__getTermLines"
+               , mkNamespacedName (Just bufferNS) "prim__newBuffer"
+               , mkNamespacedName (Just bufferNS) "prim__bufferSize"
+               , mkNamespacedName (Just bufferNS) "prim__setByte"
+               , mkNamespacedName (Just bufferNS) "prim__getByte"
+               , mkNamespacedName (Just bufferNS) "prim__setInt32"
+               , mkNamespacedName (Just bufferNS) "prim__getInt32"
+               , mkNamespacedName (Just bufferNS) "prim__setInt"
+               , mkNamespacedName (Just bufferNS) "prim__getInt"
+               , mkNamespacedName (Just bufferNS) "prim__setDouble"
+               , mkNamespacedName (Just bufferNS) "prim__getDouble"
+               , mkNamespacedName (Just bufferNS) "prim__setString"
+               , mkNamespacedName (Just bufferNS) "prim__getstring"
+               , mkNamespacedName (Just bufferNS) "prim__copyData"
+               , mkNamespacedName (Just bufferNS) "prim__readBufferData"
+               , mkNamespacedName (Just bufferNS) "prim__writeBufferData"
+               , mkNamespacedName (Just bufferNS) "stringByteLength"
+               , mkNamespacedName (Just strIterNS) "prim__fromString"
+               , mkNamespacedName (Just strIterNS) "prim__uncons"
+               ]
 
 mutual -- TODO try remove in favour of forward declarions ?
-
-  uninhabNS : Namespace
-  uninhabNS = preludeNS <.> mkNamespace "Uninhabited"
-
-  iorefNS : Namespace
-  iorefNS = mkNamespace "Data.IORef"
-
-  bufferNS : Namespace
-  bufferNS = mkNamespace "Data.Buffer"
-
-  stringsNS : Namespace
-  stringsNS = mkNamespace "Data.Strings"
-
-  strIterNS : Namespace
-  strIterNS = mkNamespace "Data.String.Iterator"
-
-  arrayNS : Namespace
-  arrayNS = mkNamespace "Data.IOArray.Prims"
-
-  systemNS : Namespace
-  systemNS = mkNamespace "System"
-
-  dirNS : Namespace
-  dirNS = mkNamespace "System.Directory"
-
-  infoNS : Namespace
-  infoNS = mkNamespace "System.Info"
-
-  fileNS : Namespace
-  fileNS = mkNamespace "System.File"
-
-  termNS : Namespace
-  termNS = mkNamespace "Utils.Term"
-
-  ioNS : Namespace
-  ioNS = preludeNS <.> mkNamespace "IO"
-
-  primioNS : Namespace
-  primioNS = mkNamespace "PrimIO"
-
-  extNames : List Name
-  extNames = [
-               mkNamespacedName (Just iorefNS) "prim__newIORef"
-             , mkNamespacedName (Just iorefNS) "prim__readIORef"
-             , mkNamespacedName (Just iorefNS) "prim__writeIORef"
-             , mkNamespacedName (Just arrayNS) "prim__newArray"
-             , mkNamespacedName (Just arrayNS) "prim__arrayGet"
-             , mkNamespacedName (Just arrayNS) "prim__arraySet"
-             , mkNamespacedName (Just infoNS)  "prim__os"
-             , mkNamespacedName (Just infoNS)  "prim__codegen"
-             , mkNamespacedName (Just uninhabNS) "void"
-             , mkNamespacedName (Just ioNS) "onCollect"
-             , mkNamespacedName (Just ioNS) "onCollectAny"
-             ]
-
-  foreignImpls : List Name
-  foreignImpls = [
-                   ------------- Not Implemented -----------
-                   mkNamespacedName (Just $ mkNamespace "Idris.IDEMode.REPL") "prim__fdopen"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_accept"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_bind"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_create_sockaddr"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_free"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_family"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_ipv4"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_socket"
-                 , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__socket_listen"
-
-                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet"
-                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet6"
-                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unix"
-                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unspec"
-                 , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_errno"
-
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcCpu"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcReal"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeMonotonic"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeProcess"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeThread"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeUtc"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockNanosecond"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockSecond"
-                 , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockValid"
-
-                 , mkNamespacedName (Just ioNS) "prim__fork"
-                 , mkNamespacedName (Just systemNS) "prim__setEnv"
-                 , mkNamespacedName (Just systemNS) "prim__getEnvPair"
-                 , mkNamespacedName (Just systemNS) "prim__unsetEnv"
-                   -------------------------------------------
-
-
-                 , mkNamespacedName (Just primioNS) "prim__nullAnyPtr"
-                 , mkNamespacedName (Just ioNS) "prim__putStr"
-                 , mkNamespacedName (Just ioNS) "prim__putChar"
-                 , mkNamespacedName (Just ioNS) "prim__getStr"
-                 , mkNamespacedName (Just ioNS) "prim__getChar"
-                 , mkNamespacedName (Just ioNS) "prim__getString"
-                 , mkNamespacedName (Just fileNS) "prim__flush"
-                 , mkNamespacedName (Just fileNS) "prim__writeLine"
-                 , mkNamespacedName (Just fileNS) "prim__readLine"
-                 , mkNamespacedName (Just fileNS) "prim__readChar"
-                 , mkNamespacedName (Just fileNS) "prim__readChars"
-                 , mkNamespacedName (Just fileNS) "prim__eof"
-                 , mkNamespacedName (Just fileNS) "prim__open"
-                 , mkNamespacedName (Just fileNS) "prim__close"
-                 , mkNamespacedName (Just fileNS) "prim__error"
-                 , mkNamespacedName (Just fileNS) "prim__fileErrno"
-                 , mkNamespacedName (Just fileNS) "prim__removeFile"
-                 , mkNamespacedName (Just fileNS) "prim__fileSize"
-                 , mkNamespacedName (Just fileNS) "prim__fPoll"
-                 , mkNamespacedName (Just fileNS) "prim__fileModifiedTime"
-                 , mkNamespacedName (Just fileNS) "prim__fileStatusTime"
-                 , mkNamespacedName (Just fileNS) "prim__stdin"
-                 , mkNamespacedName (Just fileNS) "prim__stdout"
-                 , mkNamespacedName (Just fileNS) "prim__stderr"
-                 , mkNamespacedName (Just fileNS) "prim__chmod"
-                 , mkNamespacedName (Just dirNS) "prim__changeDir"
-                 , mkNamespacedName (Just dirNS) "prim__currentDir"
-                 , mkNamespacedName (Just dirNS) "prim__createDir"
-                 , mkNamespacedName (Just dirNS) "prim__removeDir"
-                 , mkNamespacedName (Just dirNS) "prim__openDir"
-                 , mkNamespacedName (Just dirNS) "prim__closeDir"
-                 , mkNamespacedName (Just dirNS) "prim__dirEntry"
-                 , mkNamespacedName (Just dirNS) "prim__fileErrno"
-                 , mkNamespacedName (Just systemNS) "prim__getArgs"
-                 , mkNamespacedName (Just systemNS) "prim__getEnv"
-                 , mkNamespacedName (Just systemNS) "prim__exit"
-                 , mkNamespacedName (Just systemNS) "prim__system"
-                 , mkNamespacedName (Just stringsNS) "fastConcat"
-                 , mkNamespacedName (Just stringsNS) "fastUnpack"
-                 , mkNamespacedName (Just typesNS) "fastPack"
-                 , mkNamespacedName (Just termNS) "prim__setupTerm"
-                 , mkNamespacedName (Just termNS) "prim__getTermCols"
-                 , mkNamespacedName (Just termNS) "prim__getTermLines"
-                 , mkNamespacedName (Just bufferNS) "prim__newBuffer"
-                 , mkNamespacedName (Just bufferNS) "prim__bufferSize"
-                 , mkNamespacedName (Just bufferNS) "prim__setByte"
-                 , mkNamespacedName (Just bufferNS) "prim__getByte"
-                 , mkNamespacedName (Just bufferNS) "prim__setInt32"
-                 , mkNamespacedName (Just bufferNS) "prim__getInt32"
-                 , mkNamespacedName (Just bufferNS) "prim__setInt"
-                 , mkNamespacedName (Just bufferNS) "prim__getInt"
-                 , mkNamespacedName (Just bufferNS) "prim__setDouble"
-                 , mkNamespacedName (Just bufferNS) "prim__getDouble"
-                 , mkNamespacedName (Just bufferNS) "prim__setString"
-                 , mkNamespacedName (Just bufferNS) "prim__getstring"
-                 , mkNamespacedName (Just bufferNS) "prim__copyData"
-                 , mkNamespacedName (Just bufferNS) "prim__readBufferData"
-                 , mkNamespacedName (Just bufferNS) "prim__writeBufferData"
-                 , mkNamespacedName (Just bufferNS) "stringByteLength"
-                 , mkNamespacedName (Just strIterNS) "prim__fromString"
-                 , mkNamespacedName (Just strIterNS) "prim__uncons"
-                 ]
 
   processCustomExtCall :
          {auto stack : Ref Stack StackSt}
@@ -1243,7 +1206,7 @@ mutual -- TODO try remove in favour of forward declarions ?
      -> {auto frame : StackFrame}
      -> {auto opts : COpts}
      -> (alt : NamedConstAlt)
-     -> Core (LuaExpr {-const-}, LuaExpr{-arm-})
+     -> Core (LuaExpr {-const-}, LuaExpr {-arm-})
   processConstAlt alt@(MkNConstAlt c res) =
     do
       const <- processConstant c
@@ -1331,27 +1294,32 @@ getCOpts =
 translate : Ref Ctxt Defs -> ClosedTerm -> Core StrBuffer
 translate defs term = do
   opts <- getCOpts
+
   clock0 <- coreLift $ clockTime Monotonic
+
   logLine "Lua compilation started [0/5]"
   logLine ("Using " ++ opts |> luaVersion |> get |> show)
   cdata <- getCompileData Cases term
+
   clock1 <- coreLift $ clockTime Monotonic
+
   logLine $ "Got compile data [1/5] in " ++ showMillis (toMillis $ timeDifference clock1 clock0)
   let ndefs = cdata.namedDefs
-  -- let gdefs = cdata.globalDefs
-  --printDefs ndefs gdefs
   let ctm = forget cdata.mainExpr
+
   clock2 <- coreLift $ clockTime Monotonic
+
   logLine $ "Looked up direct names [2/5] in " ++ showMillis (toMillis $ timeDifference clock2 clock1)
   let ndefs = (\(n, _, d) => (n, d)) <$> ndefs
   let ndefs = defsUsedByNamedCExp ctm (defsToUsedMap ndefs) -- work through relevant names only
   let ndefsMap = defsToUsedMap ndefs
   let ndefs = quicksort {defs = ndefsMap} ndefs -- sort names by dependency order
-  --printDebug ndefs
   s <- newRef Stack (MkStackSt [] frameLowest indexLowest)
   pr <- newRef Preamble (MkPreambleSt empty)
   cdefs <- traverse processDef ndefs
+
   clock3 <- coreLift $ clockTime Monotonic
+
   logLine $ "Compiled definitions [3/5] in " ++ showMillis (toMillis $ timeDifference clock3 clock2)
   let con_cdefs = concat cdefs
   --TODO tail call optimization
@@ -1359,7 +1327,9 @@ translate defs term = do
   (block, main) <- processExpr {frame} ctm
   vars <- popFrame
   let frameTable = declFrameTable frame vars
+
   clock4 <- coreLift $ clockTime Monotonic
+
   logLine $ "Compiled main [4/5] in " ++ showMillis (toMillis $ timeDifference clock4 clock3)
   preamble <- getPreamble
 
@@ -1369,8 +1339,7 @@ translate defs term = do
                    else
                      readDataFile $ "lua" </> "idris2-lua.lua"
 
-
-  let stringPlan : DeferedStr =
+  let stringPlan : DeferredStr =
              [ " --------- SUPPORT DEFS ---------\n"
              , "if not idris then\n"
              , "  idris = {}\n"
@@ -1393,7 +1362,9 @@ translate defs term = do
   let mbyte = 1024 * 1024
   strbuf <- newRef LuaCode !(allocStrBuffer mbyte)
   traverse_ (writeStr LuaCode) stringPlan
+
   clock5 <- coreLift $ clockTime Monotonic
+
   logLine $ "Stringified lua [5/5] in " ++ showMillis (toMillis $ timeDifference clock5 clock4)
   logLine $ "All done in " ++ showMillis (toMillis $ timeDifference clock5 clock0)
   strbuf <- get LuaCode
@@ -1411,7 +1382,7 @@ getLuaExe
       mbDefined <- getEnv "LuaExe"
       pure $ mbDefined `orElse` "lua"
 
-build : Ref Ctxt Defs --TODO add option to build only .lua file
+build : Ref Ctxt Defs --TODO add option to build only the .lua file
      -> String
      -> ClosedTerm
      -> String {-relative-}

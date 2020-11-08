@@ -15,12 +15,10 @@ import Utils.Hex
 
 infixl 100 |>
 
-public export
+||| Flipped tightly bound function application
+public export %inline
 (|>) : a -> (a -> b) -> b
 x |> f = f x
-
-public export
-data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
 
 namespace Strings
   FromString (List Char) where
@@ -62,7 +60,7 @@ namespace Strings
                      Nothing => ""
      removeAll lit str | True = ""
 
-  ||| TODO Useful function to add to `base` ?
+  -- TODO Useful function to add to `base` ?
   ||| Splits the subject string into parts by the delimiter.
   public export
   split : (delim : List1 Char) -> (subject : List Char) -> List1 (List Char)
@@ -89,6 +87,10 @@ namespace Strings
   public export %inline
   trim : List Char -> List Char
   trim = reverse . trimLeft . reverse . trimLeft
+
+
+public export
+data LuaVersion = Lua51 | Lua52 | Lua53 | Lua54
 
 
 namespace LuaVersion
@@ -129,8 +131,6 @@ namespace LuaVersion
   Ord LuaVersion where
      compare v v' = compare (index v) (index v')
 
-
-
   export
   parseLuaVersion : String -> Maybe LuaVersion
   parseLuaVersion str = helper ((trim . toLower) str)
@@ -147,7 +147,6 @@ namespace LuaVersion
        in
            do int <- parseInteger {a = Int} firstTwo
               fromIndex int
-
 
 
 namespace Data.List
@@ -170,11 +169,17 @@ namespace Data.List
    = zipWith (++) (map (\f => fromMaybe [] (toMaybe (f x) [x])) fs) (group xs fs)
 
 
-
 namespace Data.Maybe
+
   public export %inline
   orElse : (maybe : Maybe a) -> (def : Lazy a) -> a
   orElse = flip fromMaybe
+
+  -- TODO add to `base` ?
+  public export
+  filter : (f : a -> Bool) -> (mb : Maybe a) -> Maybe a
+  filter f mb = mb >>= \x => toMaybe (f x) x
+
 
 public export
 luaKeywords : List String
@@ -266,21 +271,6 @@ curryTransform : (vars : List (List Char)) -> (body : List Char) -> List Char
 curryTransform [] body = body
 curryTransform (x :: xs) body = "function(" ++ x ++ ") return " ++ curryTransform xs body ++ " end"
 
--- public export
--- escapeString : String -> String
--- escapeString s = concatMap okchar (unpack s)
---   where
---     okchar : Char -> String
---     okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
---                   then cast c
---                   else case c of
---                             '\0' => "\\0"
---                             '\'' => "\\'"
---                             '"' => "\\\""
---                             '\r' => "\\r"
---                             '\n' => "\\n"
---                             other => "\\u{" ++ asHex (cast {to=Int} c) ++ "}"
-
 export %inline
 sequenceMaybe : Maybe (Core a) -> Core (Maybe a)
 sequenceMaybe Nothing = pure Nothing
@@ -292,79 +282,77 @@ record StrBuffer where
   get : Buffer
   offset : Int
 
-export
-allocStrBuffer : Int -> Core StrBuffer
-allocStrBuffer initialSize =
-  do
-     (Just buf) <- coreLift $ newBuffer initialSize
-        | _ => throw (UserError "Could not allocate buffer")
-     pure (MkStrBuffer buf 0)
 
-export
-writeStr :
-      (marker : Type)
-   -> {auto buf : Ref marker StrBuffer}
-   -> String
-   -> Core ()
-writeStr marker str =
-  do
-     let strlen = stringByteLength str
-     strbuf <- get marker
-     raw <- ensureSize strbuf.get strbuf.offset strlen
-     coreLift $ setString raw strbuf.offset str
-     put marker (MkStrBuffer raw (strbuf.offset + strlen))
-     pure ()
+namespace StrBuffer
 
-   where
-     ensureSize : Buffer -> Int -> Int -> Core Buffer
-     ensureSize buf offset strlen =
-        let bufLen = !(coreLift $ rawSize buf) in
-            if offset + strlen > bufLen
-               then do
-                  (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
-                    | _ => throw (UserError "Could not allocate buffer")
-                  pure buf
-            else
-               pure buf
-
--- TODO switch to LazyList String ?
-public export
-data DeferedStr : Type where
-  Nil : DeferedStr
-  (::) : Lazy a -> {auto prf : Either (a = String) (a = DeferedStr)} -> DeferedStr -> DeferedStr
-
-export
-pure : String -> DeferedStr
-pure x = [delay x]
-
-export
-traverse_ : (String -> Core b) -> DeferedStr -> Core ()
-traverse_ f ((::) x xs {prf = Left Refl}) = do f x; traverse_ f xs
-traverse_ f ((::) x xs {prf = Right Refl}) = do traverse_ f x; traverse_ f xs
-traverse_ _ [] = pure ()
-
-
-namespace DeferedStr
   export
-  sepBy : List (DeferedStr) -> String -> DeferedStr
+  allocStrBuffer : Int -> Core StrBuffer
+  allocStrBuffer initialSize =
+    do
+       (Just buf) <- coreLift $ newBuffer initialSize
+          | _ => throw (UserError "Could not allocate buffer")
+       pure (MkStrBuffer buf 0)
+
+  export
+  writeStr :
+        (marker : Type)
+     -> {auto buf : Ref marker StrBuffer}
+     -> String
+     -> Core ()
+  writeStr marker str =
+    do
+       let strlen = stringByteLength str
+       strbuf <- get marker
+       raw <- ensureSize strbuf.get strbuf.offset strlen
+       coreLift $ setString raw strbuf.offset str
+       put marker (MkStrBuffer raw (strbuf.offset + strlen))
+       pure ()
+
+     where
+       ensureSize : Buffer -> Int -> Int -> Core Buffer
+       ensureSize buf offset strlen =
+          let bufLen = !(coreLift $ rawSize buf) in
+              if offset + strlen > bufLen
+                 then do
+                    (Just buf) <- coreLift $ resizeBuffer buf (max (2 * bufLen) (offset + strlen))
+                      | _ => throw (UserError "Could not allocate buffer")
+                    pure buf
+              else
+                 pure buf
+
+
+public export
+data DeferredStr : Type where
+  Nil : DeferredStr
+  (::) : Lazy a
+     -> {auto prf : Either (a = String) (a = DeferredStr)}
+     -> Lazy DeferredStr
+     -> DeferredStr
+
+
+namespace DeferredStr
+
+  export
+  pure : String -> DeferredStr
+  pure x = [delay x]
+
+  export
+  traverse_ : (String -> Core b) -> DeferredStr -> Core ()
+  traverse_ f ((::) x xs {prf = Left Refl}) = do f x; traverse_ f xs
+  traverse_ f ((::) x xs {prf = Right Refl}) = do traverse_ f x; traverse_ f xs
+  traverse_ _ [] = pure ()
+
+  export
+  sepBy : List (DeferredStr) -> String -> DeferredStr
   sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
   sepBy (x :: []) _ = [x]
   sepBy [] _ = []
-
 
 --it is actually more general than that, but whatever
 export
 trimQuotes : String -> String
 trimQuotes x = substr 1 (length x `minus` 2) x
 
-
-export
+public export %inline
 forAll : (a -> Bool) -> List a -> Bool
-forAll f (x :: xs) = f x && forAll f xs
-forAll f [] = True
-
-namespace Maybe
-  -- TODO add to `base` ?
-  public export
-  filter : (f : a -> Bool) -> (mb : Maybe a) -> Maybe a
-  filter f mb = mb >>= \x => toMaybe (f x) x
+forAll f xs = foldl (\ac, x => ac && f x) True xs
