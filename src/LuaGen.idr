@@ -66,6 +66,7 @@ record COpts where
    luaVersion           : WithDefault LuaVersion Nothing --LuaVersion
    noRequire            : WithDefault Bool (Just False)  --NoRequire
    debugOutput          : WithDefault Bool (Just False)  --DebugOutput
+   omitEntryCall        : WithDefault Bool (Just False)  --OmitEntryCall
                     --omit 'require' statements in the header of the support script
                     --useful when you want to run idris in environment where not all libraries
                     --are supported or dynamic library loading is turned off
@@ -1284,12 +1285,14 @@ getCOpts =
          | _ => throw (UserError "Could not parse Lua version from $LuaVersion, format: X.X[.X]")
       opt4 <- coreLift $ getEnv "NoRequire"
       opt5 <- coreLift $ getEnv "DebugOutput"
+      opt6 <- coreLift $ getEnv "OmitEntryCall"
       pure $ MkCOptsInfo
                (thisOrDefault (opt1 >>= parseEnvBool))
                (thisOrDefault (opt2 >>= parseEnvBool))
                (MkWithDefault opt3 _)
                (thisOrDefault (opt4 >>= parseEnvBool))
                (thisOrDefault (opt5 >>= parseEnvBool))
+               (thisOrDefault (opt6 >>= parseEnvBool))
 
 translate : Ref Ctxt Defs -> ClosedTerm -> Core StrBuffer
 translate defs term = do
@@ -1334,31 +1337,40 @@ translate defs term = do
   preamble <- getPreamble
 
   support <- if opts |> dynamicSupportLib |> get
-                   then
-                     pure "require(\"idris2-lua\")"
-                   else
-                     readDataFile $ "lua" </> "idris2-lua.lua"
+             then
+               pure "require(\"idris2-lua\")"
+             else
+               readDataFile $ "lua" </> "idris2-lua.lua"
+
+  let returnPlan : DeferredStr =
+             if opts |> omitEntryCall |> get
+             then
+               []
+             else
+               [
+                 "\n--------- RETURN ---------\n"
+               , stringify Z frameTable, "\n"
+               , stringify Z block     , "\n"
+               , stringify Z main
+               ]
 
   let stringPlan : DeferredStr =
              [ " --------- SUPPORT DEFS ---------\n"
-             , "if not idris then\n"
-             , "  idris = {}\n"
-             , "  idris.null = {}\n"
-             , "  local null = idris.null\n"
-             , "  idris.luaVersion = " ++ show (opts |> luaVersion |> get |> index) ++ "\n" --sets target Lua version to be used in support
-             , "  idris.noRequire  = " ++ (toLower . show) (opts |> noRequire |> get) ++ "\n"
-             , "  ", support , "\n"
-             , "end\n"
+             , "idris = {}\n"
+             , "idris.null = {}\n"
+             , "local null = idris.null\n"
+             , "idris.luaVersion = " ++ show (opts |> luaVersion |> get |> index) ++ "\n" --sets target Lua version to be used in support
+             , "idris.noRequire  = " ++ (toLower . show) (opts |> noRequire |> get) ++ "\n"
+             , support , "\n"
              , "local idris = idris\n"
              , "local W = idris.W\n"
              , "---------- PREAMBLE DEFS ----------\n"
              , join "\n" (preamble |> values)
              , "\n---------- CTX DEFS ----------\n"
              , stringify Z con_cdefs
-             , "\n--------- RETURN ---------\n"
-             , stringify Z frameTable, "\n"
-             , stringify Z block     , "\n"
-             , stringify Z main]
+             ]
+          ++ returnPlan
+          ++ ["\nreturn idris"]
   let mbyte = 1024 * 1024
   strbuf <- newRef LuaCode !(allocStrBuffer mbyte)
   traverse_ (writeStr LuaCode) stringPlan

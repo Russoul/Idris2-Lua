@@ -244,8 +244,10 @@ parseEnvBool str =
   case toLower str of
     "true" => Just True
     "1" => Just True
+    "on" => Just True
     "false" => Just False
     "0" => Just False
+    "off" => Just False
     _ => Nothing
 
 ||| Escape some of the ascii codes, fail on unicode, as
@@ -325,9 +327,9 @@ public export
 data DeferredStr : Type where
   Nil : DeferredStr
   (::) : Lazy a
-     -> {auto prf : Either (a = String) (a = DeferredStr)}
-     -> Lazy DeferredStr
-     -> DeferredStr
+      -> {auto prf : Either (a = String) (a = DeferredStr)}
+      -> Lazy DeferredStr
+      -> DeferredStr
 
 
 namespace DeferredStr
@@ -343,10 +345,15 @@ namespace DeferredStr
   traverse_ _ [] = pure ()
 
   export
-  sepBy : List (DeferredStr) -> String -> DeferredStr
+  sepBy : Lazy (List (DeferredStr)) -> String -> DeferredStr
   sepBy (x :: xs@(_ :: _)) sep = x :: sep :: sepBy xs sep
   sepBy (x :: []) _ = [x]
   sepBy [] _ = []
+
+  export
+  (++) : Lazy DeferredStr -> Lazy DeferredStr -> DeferredStr
+  [] ++ rhs = rhs
+  (x :: xs) ++ rhs = x :: xs ++ rhs
 
 --it is actually more general than that, but whatever
 export

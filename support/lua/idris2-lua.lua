@@ -1,7 +1,7 @@
 --idris = {}
 --idris.null = {}
 --local null = idris.null
---idris.luaVersion {51,52,53,54}         --set automatically by compiler
+--idris.luaVersion {51,52,53,54}         --set automatically by the compiler
 --idris.noRequire  {true,false}
 
 if not idris.noRequire then
@@ -49,7 +49,7 @@ end
 local abs = math.abs
 local modf = math.modf
 function idris.getBit32()
-   if idris.luaVersion == 51 then    --idris.luaVersion is autodefined by compiler
+   if idris.luaVersion == 51 then    --idris.luaVersion is autodefined by the compiler
       return require('bit32')        --bit32 lib is required on lua 5.1
    elseif idris.luaVersion == 52 then
       return bit32                   --builtin on lua 5.2
@@ -58,7 +58,7 @@ function idris.getBit32()
    end                               --in this case bit32 won't be used by Idris 2
 end
 
-function idris.getToInteger()        --behaviour of math.tointeger of lua 5.3 (returns null on float)
+function idris.getToInteger()        --behaviour of math.tointeger of lua 5.3 (returns nil on float)
    if idris.luaVersion < 53 then
       return function (x)
          local int, frac = modf(x)
