@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y liblua5.1-dev
           sudo apt-get install -y luarocks
           luarocks install luautf8 --lua-version=5.1 --local
-          luarocks install bigint --lua-version=5.1 --local
+          luarocks install bigint --lua-version=5.1 --local LD='clang -lstdc++'
           luarocks install luafilesystem --lua-version=5.1 --local
           luarocks install vstruct --lua-version=5.1 --local
           luarocks install bit32 --lua-version=5.1 --local
