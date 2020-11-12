@@ -1,0 +1,44 @@
+name: Ubuntu
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - master
+
+env:
+  SCHEME: scheme
+  IDRIS2_TESTS_CG: chez
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install build dependencies
+        run: |
+          sudo apt-get install -y chezscheme
+          sudo apt-get install -y lua5.1
+          sudo apt-get install -y liblua5.1-dev
+          sudo apt-get install -y luarocks
+          luarocks install luautf8 --lua-version=5.1
+          luarocks install bigint --lua-version=5.1
+          luarocks install luafilesystem --lua-version=5.1
+          luarocks install vstruct --lua-version=5.1
+          luarocks install bit32 --lua-version=5.1
+          luarocks install inspect --lua-version=5.1
+          echo "$HOME/.idris2/bin" >> $GITHUB_PATH
+      - name: Install Idris 2
+        run: |
+          git clone https://github.com/idris-lang/Idris2
+          cd Idris2
+          make bootstrap-build && make install
+          make clean && make all && make install && make install-api
+          cd ..
+      - name: Build and test the backend
+        run: eval $(luarocks path --lua-version=5.1) && LuaVersion=5.1 LuaExe=lua5.1 make all INTERACTIVE=''
+        shell: bash
