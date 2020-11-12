@@ -1,4 +1,4 @@
-name: macOS
+name: Ubuntu
 on:
   push:
     branches:
@@ -8,24 +8,25 @@ on:
   pull_request:
     branches:
       - master
+
 env:
-  SCHEME: chez
+  SCHEME: scheme
   IDRIS2_TESTS_CG: chez
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install build dependencies
         run: |
-          brew install chezscheme
-          brew install coreutils
-          brew install lua@5.1
-          brew install luarocks
+          sudo apt-get install -y chezscheme
+          sudo apt-get install -y lua5.1
+          sudo apt-get install -y liblua5.1-dev
+          sudo apt-get install -y luarocks
           luarocks install luautf8 --lua-version=5.1 --local
-          luarocks install bigint --lua-version=5.1 --local
+          luarocks install bigint --lua-version=5.1 --local LD='clang -lstdc++'
           luarocks install luafilesystem --lua-version=5.1 --local
           luarocks install vstruct --lua-version=5.1 --local
           luarocks install bit32 --lua-version=5.1 --local

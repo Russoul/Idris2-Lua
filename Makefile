@@ -57,7 +57,7 @@ endif
 install-support: check-env
 	mkdir -p ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 	cd support/lua; \
-	luarocks make --lua-version=$(LuaVersion)
+	luarocks make --lua-version=$(LuaVersion) --local
 	install support/lua/idris2-lua.lua ${PREFIX}/idris2-${IDRIS2_VERSION}/support/lua
 
 test: clean-tests install-support
