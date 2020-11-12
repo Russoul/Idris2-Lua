@@ -17,7 +17,7 @@
   luarocks install inspect
   ```
 
-  Before you proceed, fill in the `LuaVersion` and `LuaExe` environmental variables with a desired Lua version and a name of the executable file for that version.
+  Before you proceed, fill in the `LuaVersion` and `LuaExe` environment variables with a desired Lua version and a name of the executable file for that version.
 
 #### Build, test and install:
 
