@@ -24,12 +24,12 @@ jobs:
           brew install coreutils
           brew install lua@5.1
           brew install luarocks
-          luarocks install luautf8 --lua-version=5.1
-          luarocks install bigint --lua-version=5.1
-          luarocks install luafilesystem --lua-version=5.1
-          luarocks install vstruct --lua-version=5.1
-          luarocks install bit32 --lua-version=5.1
-          luarocks install inspect --lua-version=5.1
+          luarocks install luautf8 --lua-version=5.1 --local
+          luarocks install bigint --lua-version=5.1 --local
+          luarocks install luafilesystem --lua-version=5.1 --local
+          luarocks install vstruct --lua-version=5.1 --local
+          luarocks install bit32 --lua-version=5.1 --local
+          luarocks install inspect --lua-version=5.1 --local
           echo "$HOME/.idris2/bin" >> $GITHUB_PATH
       - name: Install Idris 2
         run: |
