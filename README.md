@@ -14,10 +14,21 @@
 #### All libraries can be installed via [*luarocks*](https://luarocks.org):
 
   ```
-  luarocks install luautf8 && luarocks install bigint
-  luarocks install luafilesystem && luarocks install vstruct
-  luarocks install inspect
+  luarocks install luautf8 --lua-version=V --local
+  luarocks install bigint --lua-version=V --local LD='clang -lstdc++'
+  luarocks install luafilesystem --lua-version=V --local
+  luarocks install vstruct --lua-version=V --local
+  luarocks install inspect --lua-version=V --local
   ```
+#### Lua 5.1 only:  
+  
+  ```
+  luarocks install bit32 --lua-version=5.1 --local
+  ```
+  
+where `V` is your lua version (5.1, 5.2, 5.3, 5.4).
+
+---
 
   Before you proceed, fill in the `LuaVersion` and `LuaExe` environment variables with a desired Lua version and a name of the executable file for that version.
 
