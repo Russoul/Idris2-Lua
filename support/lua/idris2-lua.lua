@@ -421,6 +421,25 @@ idris["System.prim__system"] = function(cmd)
   end
 end
 
+idris["System.File.prim__popen"] = function(cmd)
+  return function(mode)
+    return function(_)
+      local res = assert(io.popen(cmd, mode))
+      if res then
+        return idris.mkPtr({handle=res, path=""})
+      else
+        return null
+      end
+    end
+  end
+end
+
+idris["System.File.prim__pclose"] = function(ptr)
+  return function(_)
+    return ptr.deref.handle:close()
+  end
+end
+
 --------------------------------------------------------
 ----------------------  LFS ----------------------------
 --------------------------------------------------------

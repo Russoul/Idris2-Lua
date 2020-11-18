@@ -752,6 +752,8 @@ foreignImpls = [
                , mkNamespacedName (Just fileNS) "prim__eof"
                , mkNamespacedName (Just fileNS) "prim__open"
                , mkNamespacedName (Just fileNS) "prim__close"
+               , mkNamespacedName (Just fileNS) "prim__popen"
+               , mkNamespacedName (Just fileNS) "prim__pclose"
                , mkNamespacedName (Just fileNS) "prim__error"
                , mkNamespacedName (Just fileNS) "prim__fileErrno"
                , mkNamespacedName (Just fileNS) "prim__removeFile"
