@@ -257,12 +257,12 @@ escapeStringLua : String -> Maybe String
 escapeStringLua s = concat <$> traverse okchar (fastUnpack s)
   where
     okchar : Char -> Maybe String
-    okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c /= '\'') && (c <= '~')
+    okchar c = if (c >= ' ') && (c /= '\\') && (c /= '"') && (c <= '~')
                   then Just (cast c)
                   else case c of
                             '\0' => Just "\\0"
-                            '\'' => Just "\\'"
                             '"' => Just "\\\""
+                            '\\' => Just "\\\\"
                             '\r' => Just "\\r"
                             '\n' => Just "\\n"
                             _ => Nothing
