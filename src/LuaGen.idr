@@ -3,12 +3,17 @@ module LuaGen
 import Compiler.Common
 import Compiler.CompileExpr
 
-import Control.Monad.Syntax
-
 import Core.Context
 import Core.Directory
 
-import Data.Bool.Extra
+import Control.Monad.Syntax
+
+import Libraries.Data.Bool.Extra
+import Libraries.Utils.Hex
+import Libraries.Utils.Path
+
+import Idris.Driver
+
 import Data.Buffer
 import Data.List
 import Data.List1
@@ -20,14 +25,10 @@ import Data.Strings
 import Data.Vect
 
 import Debug.Trace
-import Idris.Driver
 
 import System
 import System.Clock
 import System.File
-
-import Utils.Hex
-import Utils.Path
 
 import LuaCommon
 import OrderDefs

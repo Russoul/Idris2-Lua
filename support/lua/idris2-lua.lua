@@ -321,27 +321,26 @@ end
 ---------------------------------
 
 function idris.fastConcatImpl(list, buffer)
-   if list.tag == "0" then
-      return table.concat(buffer) --concat all strings at once, only 1 allocation
-   else
-      local c = list.arg1
-      buffer[#buffer + 1] = c
-      return idris.fastConcatImpl(list.arg2, buffer) --tail call
+   local l = list
+   while l.tag ~= "0" do
+     buffer[#buffer + 1] = l.arg1
+     l = l.arg2
    end
+   return table.concat(buffer)
 end
 
 function idris.fastUnpackImpl(str, i, chars)
-   if i == 0 then
-      return chars
-   else
-      return idris.fastUnpackImpl(str, i - 1, {tag = "1", arg2 = chars, arg1 = utf8.sub(str, i, i)})
+   while i ~= 0 do
+     chars = {tag="1", arg1=utf8.sub(str, i, i), arg2=chars}
+     i = i - 1
    end
+   return chars
 end
 
 idris.fastConcat = function(args) return idris.fastConcatImpl(args, {}) end -- impl of fastConcat
 idris.fastUnpack = function(str) return idris.fastUnpackImpl(str, utf8.len(str), {tag = "0"}) end -- impl of fastUnpack
-idris["Data.Strings.fastConcat"] = idris.fastConcat
-idris["Data.Strings.fastUnpack"] = idris.fastUnpack
+idris["Data.String.fastConcat"] = idris.fastConcat
+idris["Data.String.fastUnpack"] = idris.fastUnpack
 idris["Prelude.Types.fastPack"] = idris.fastConcat
 
 function idris.iterFromStringImpl(str)
