@@ -36,7 +36,7 @@ jobs:
         run: |
           git clone https://github.com/idris-lang/Idris2
           cd Idris2
-          make bootstrap-build && make install
+          make bootstrap && make install
           make clean && make all && make install && make install-api
           cd ..
       - name: Build and test the backend
