@@ -6,8 +6,6 @@ import Compiler.CompileExpr
 import Core.Context
 import Core.Directory
 
-import Control.Monad.Syntax
-
 import Libraries.Data.Bool.Extra
 import Libraries.Utils.Hex
 import Libraries.Utils.Path

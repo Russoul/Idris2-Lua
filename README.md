@@ -1,6 +1,7 @@
 # Lua backend for Idris 2
 [![](https://github.com/Russoul/Idris2-Lua/workflows/Ubuntu/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"Ubuntu")
 [![](https://github.com/Russoul/Idris2-Lua/workflows/macOS/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"macOS")
+Tested with [Idris 2 b8aaaf3](https://github.com/idris-lang/Idris2/tree/b8aaaf32759bc9f410058772901a0d6b98e881af)
 
 ## Requirements & Installation
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
@@ -20,12 +21,12 @@
   luarocks install vstruct --lua-version=V --local
   luarocks install inspect --lua-version=V --local
   ```
-#### Lua 5.1 only:  
-  
+#### Lua 5.1 only:
+
   ```
   luarocks install bit32 --lua-version=5.1 --local
   ```
-  
+
 where `V` is your lua version (5.1, 5.2, 5.3, 5.4).
 
 ---
