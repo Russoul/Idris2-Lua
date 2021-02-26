@@ -1,7 +1,7 @@
 # Lua backend for Idris 2
 [![](https://github.com/Russoul/Idris2-Lua/workflows/Ubuntu/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"Ubuntu")
 [![](https://github.com/Russoul/Idris2-Lua/workflows/macOS/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"macOS")
-Tested with [Idris 2, version 0.3.0-59de5f132](https://github.com/idris-lang/Idris2/tree/59de5f132601fb43b9bc7720acb8d1f954fa140c)
+<BR>Tested with [Idris 2, version 0.3.0-59de5f132](https://github.com/idris-lang/Idris2/tree/59de5f132601fb43b9bc7720acb8d1f954fa140c)
 
 ## Requirements & Installation
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
