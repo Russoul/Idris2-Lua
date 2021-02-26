@@ -1001,7 +1001,7 @@ mutual -- TODO try remove in favour of forward declarions ?
               logLine $ "using %foreign " ++ def
               case maybeReq of
                    (Just packs) => do logLine $ "requiring " ++ (show $ map fst packs)
-                                      traverse
+                                      traverse_
                                         (\pack =>
                                           addDefToPreamble
                                            ("$" ++ snd pack)
@@ -1135,13 +1135,13 @@ mutual -- TODO try remove in favour of forward declarions ?
            <+> LAssign Nothing tableVar (LTable [])
            <+> concat ((\(k, v) => LAssign Nothing (LIndex tableVar k) v) <$> kvs)
            , tableVar)
-  processExpr (NmDelay _ t) =
+  processExpr (NmDelay _ _ t) =
     do
       newFrame <- pushFrame
       (blockA, t) <- processExpr {frame = newFrame} t
       vars <- popFrame
       pure (LDoNothing, LLambda [] (declFrameTable newFrame vars <+> blockA <+> LReturn t))
-  processExpr (NmForce _ t) =
+  processExpr (NmForce _ _ t) =
     do
       (blockA, t) <- processExpr t
       pure (blockA, LApp t [])
@@ -1168,8 +1168,8 @@ mutual -- TODO try remove in favour of forward declarions ?
   used n (NmCon _ _ _ args) = anyTrue (map (used n) args)
   used n (NmOp _ _ args) = anyTrue (toList (map (used n) args))
   used n (NmExtPrim _ _ args) = anyTrue (map (used n) args)
-  used n (NmForce _ t) = used n t
-  used n (NmDelay _ t) = used n t
+  used n (NmForce _ _ t) = used n t
+  used n (NmDelay _ _ t) = used n t
   used n (NmConCase _ sc alts def)
         = used n sc || anyTrue (map (usedCon n) alts)
               || maybe False (used n) def
@@ -1303,7 +1303,7 @@ translate defs term = do
 
   logLine "Lua compilation started [0/5]"
   logLine ("Using " ++ opts |> luaVersion |> get |> show)
-  cdata <- getCompileData Cases term
+  cdata <- getCompileData False Cases term
 
   clock1 <- coreLift $ clockTime Monotonic
 
@@ -1429,8 +1429,8 @@ compile defs tmpDir outputDir term file = Just <$> build defs outputDir term fil
 execute : Ref Ctxt Defs -> String -> ClosedTerm -> Core ()
 execute defs tmpDir term = do
   exe <- build defs tmpDir term "generated"
-  coreLift $ fflush stdout
-  coreLift $ system $ "'" ++ exe ++ "' "
+  coreLift_ $ fflush stdout
+  coreLift_ $ system $ "'" ++ exe ++ "' "
   pure ()
 
 luaCodegen : Codegen

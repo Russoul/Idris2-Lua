@@ -335,7 +335,7 @@ namespace DeferredStr
 
   export
   traverse_ : (String -> Core b) -> DeferredStr -> Core ()
-  traverse_ f ((::) x xs {prf = Left Refl}) = do f x; traverse_ f xs
+  traverse_ f ((::) x xs {prf = Left Refl}) = do ignore (f x); traverse_ f xs
   traverse_ f ((::) x xs {prf = Right Refl}) = do traverse_ f x; traverse_ f xs
   traverse_ _ [] = pure ()
 

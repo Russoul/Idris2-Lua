@@ -71,9 +71,9 @@ main = do
    f <- ignoreErr $ openFile "data4.txt" Read
    putStrLn $ show !(fGetLine f)
    putStrLn $ show !(fEOF f)
-   fPutStrLn stdout "\x1b[38;2;255;100;0mThis is error\x1b[0m"
-   closeFile f
-   writeFile "data.txt" $ ansiColorStr "red\n" [255, 0, 0]
+   ignore $ fPutStrLn stdout "\x1b[38;2;255;100;0mThis is error\x1b[0m"
+   ignore $ closeFile f
+   ignore $ writeFile "data.txt" $ ansiColorStr "red\n" [255, 0, 0]
      ++ ansiColorStr "green\n" [0, 255, 0]
      ++ ansiColorStr "blue" [0, 0, 255]
    putStrLn $ show (the Int 257)
@@ -86,18 +86,18 @@ main = do
    ibuf <- ignoreErr $ newBuffer (i64s * 10)
    putStrLn $ "init size" ++ show !(rawSize ibuf)
    let list = [0..9]
-   traverse (\i => do setInt ibuf (i64s * i) i;putStrLn $ "next size" ++ show !(rawSize ibuf)) list
+   traverse_ (\i => do setInt ibuf (i64s * i) i;putStrLn $ "next size" ++ show !(rawSize ibuf)) list
    --setInt31 ibuf 114 (-991133)
    setInt ibuf 114 (-567)
    setDouble ibuf 122 (-241.123456789)
    setString ibuf 80 "hi there !"
    setString ibuf 90 "русский язык"
    dat2 <- ignoreErr $ openFile "data2.txt" WriteTruncate
-   writeBufferData dat2 ibuf 0 !(rawSize ibuf)
+   ignore $ writeBufferData dat2 ibuf 0 !(rawSize ibuf)
    putStrLn $ show $ !(getInt ibuf 0 )
    putStrLn $ show $ !(getInt ibuf 8 )
    putStrLn $ show $ !(getInt ibuf (8 * 9) )
-   closeFile dat2
+   ignore $ closeFile dat2
    ibuf <- ignoreErr $ createBufferFromFile "data2.txt"
    putStrLn $ show $ !(getInt ibuf 0 )
    putStrLn $ show $ !(getInt ibuf 8 )

@@ -109,7 +109,7 @@ main = do
   putStrLn $ show (1 < the Integer 2)
   putStrLn $ show (7 < the Int 4)
   args <- getArgs
-  traverse putStrLn args
+  traverse_ putStrLn args
 
   putStrLn $ show $ (the Integer 0) > 0
   putStrLn $ show $ testInteger 2 5
