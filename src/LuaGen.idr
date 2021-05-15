@@ -1123,7 +1123,7 @@ mutual -- TODO try remove in favour of forward declarions ?
            <+> blockB, cas)
   processExpr (NmExtPrim _ p args) = do
      processExtCall p args
-  processExpr (NmCon _ n mbtag args) =
+  processExpr (NmCon _ n _ mbtag args) =
     do
       args <- traverse processExpr args
       let (blockA, args) = unzip args
@@ -1165,7 +1165,7 @@ mutual -- TODO try remove in favour of forward declarions ?
   used n (NmLam _ _ sc) = used n sc
   used n (NmLet _ _ v sc) = used n v || used n sc
   used n (NmApp _ f args) = used n f || anyTrue (map (used n) args)
-  used n (NmCon _ _ _ args) = anyTrue (map (used n) args)
+  used n (NmCon _ _ _ _ args) = anyTrue (map (used n) args)
   used n (NmOp _ _ args) = anyTrue (toList (map (used n) args))
   used n (NmExtPrim _ _ args) = anyTrue (map (used n) args)
   used n (NmForce _ _ t) = used n t
@@ -1178,7 +1178,7 @@ mutual -- TODO try remove in favour of forward declarions ?
               || maybe False (used n) def
   used n _ = False
 
-  usedCon n (MkNConAlt _ _ _ sc) = used n sc
+  usedCon n (MkNConAlt _ _ _ _ sc) = used n sc
 
   usedConst n (MkNConstAlt _ sc) = used n sc
 
@@ -1189,7 +1189,7 @@ mutual -- TODO try remove in favour of forward declarions ?
      -> (cons : LuaExpr)
      -> (alt : NamedConAlt)
      -> Core (LuaExpr {-tag-}, LuaExpr {-arm-})
-  processConsAlt cons (MkNConAlt name mbtag args res') =
+  processConsAlt cons (MkNConAlt name _ mbtag args res') =
     do
       newFrame <- pushFrame
       (blockA, res) <- processExpr {frame = newFrame} res'

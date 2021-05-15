@@ -165,16 +165,9 @@ namespace Data.List
 
 
 namespace Data.Maybe
-
   public export %inline
   orElse : (maybe : Maybe a) -> (def : Lazy a) -> a
   orElse = flip fromMaybe
-
-  -- TODO add to `base` ?
-  public export
-  filter : (f : a -> Bool) -> (mb : Maybe a) -> Maybe a
-  filter f mb = mb >>= \x => toMaybe (f x) x
-
 
 public export
 luaKeywords : List String
