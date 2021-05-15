@@ -339,8 +339,8 @@ end
 
 idris.fastConcat = function(args) return idris.fastConcatImpl(args, {}) end -- impl of fastConcat
 idris.fastUnpack = function(str) return idris.fastUnpackImpl(str, utf8.len(str), {tag = "0"}) end -- impl of fastUnpack
-idris["Data.String.fastConcat"] = idris.fastConcat
-idris["Data.String.fastUnpack"] = idris.fastUnpack
+idris["Prelude.Types.fastConcat"] = idris.fastConcat
+idris["Prelude.Types.fastUnpack"] = idris.fastUnpack
 idris["Prelude.Types.fastPack"] = idris.fastConcat
 
 function idris.iterFromStringImpl(str)
@@ -944,16 +944,18 @@ idris["System.prim__exit"] = function(code)
   end
 end
 
-function idris.getArgsImpl(i)
-   if i <= #arg then
-      return {tag = "1", arg1 = arg[i], arg2 = idris.getArgsImpl(i + 1)}
-   else
-      return {tag = "0"}
-   end
+idris["System.prim__getArgCount"] = function(w)
+  if arg then
+    return 1 + #arg
+  else
+    return 0
+  end
 end
 
-idris["System.prim__getArgs"] = function(w)
-   return idris.getArgsImpl(0)
+idris["System.prim__getArg"] = function(i)
+  return function(w)
+     return arg[i]
+  end
 end
 
 idris["Prelude.Uninhabited.void"] = function(ty)

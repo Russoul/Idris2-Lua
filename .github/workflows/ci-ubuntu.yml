@@ -12,6 +12,7 @@ on:
 env:
   SCHEME: scheme
   IDRIS2_TESTS_CG: chez
+  IDRIS2_COMMIT: "349308396c1ad2579eb75084c2ab51ec2ee5e110"
 
 jobs:
   build:
@@ -36,6 +37,7 @@ jobs:
         run: |
           git clone https://github.com/idris-lang/Idris2
           cd Idris2
+          git reset --hard ${{ env.IDRIS2_COMMIT }}
           make bootstrap && make install
           make clean && make all && make install && make install-api
           cd ..

@@ -58,7 +58,7 @@ callIdrisFromLua : (String -> IO String) -> IO String
 barePrint : String -> IO ()
 barePrint = putStrLn
 
-%foreign "function(w) idris['Main.barePrint']('Another string from Lua !')(w); return {tag='0'} end"
+%foreign "function(w) idris['Main.barePrint']('Another string from Lua !')(w); return 0 end"
 callIdrisFromLua' : IO ()
 
 main : IO ()
