@@ -8,7 +8,7 @@ IDRIS2 = idris2
 IPKG = idris2-lua.ipkg
 
 MAJOR=0
-MINOR=3
+MINOR=4
 PATCH=0
 
 

@@ -6,7 +6,6 @@ import Compiler.CompileExpr
 import Core.Context
 import Core.Directory
 
-import Libraries.Data.Bool.Extra
 import Libraries.Utils.Hex
 import Libraries.Utils.Path
 
@@ -19,7 +18,7 @@ import Data.Maybe
 import Data.SortedMap
 import Data.SortedSet
 import Data.String.Extra
-import Data.Strings
+import Data.String
 import Data.Vect
 
 import Debug.Trace
@@ -605,7 +604,7 @@ processConstant : Constant -> Core LuaExpr
 processConstant (I x) = pure $ LNumber (show x)
 processConstant (BI x) = pure $ LBigInt (show x)
 processConstant (Str x) = pure $ LString x
-processConstant (Ch x) = pure $ LString (Data.Strings.singleton x)
+processConstant (Ch x) = pure $ LString (String.singleton x)
 processConstant (Db x) = pure $ LNumber (show x)
 processConstant WorldVal = pure $ LString (show WorldVal)
 processConstant c = throw $ InternalError ("Unsupported constant '" ++ (show c) ++ "' detected")
@@ -680,9 +679,6 @@ fileNS = mkNamespace "System.File"
 
 termNS : Namespace
 termNS = mkNamespace "Utils.Term"
-
-ioNS : Namespace
-ioNS = preludeNS <.> mkNamespace "IO"
 
 primioNS : Namespace
 primioNS = mkNamespace "PrimIO"
@@ -936,7 +932,7 @@ mutual -- TODO try remove in favour of forward declarions ?
   processRequire x = let names = split (== ',') x in
                          flip map (forget names) $
                            \name =>
-                             let (h, t) = Strings.break (== '(') name in
+                             let (h, t) = String.break (== '(') name in
                              case trim (drop 1 t) of
                                   "" => (trim h, trim h)
                                   t => (trim h, trim $ fst $ break (== ')') t)
@@ -1164,17 +1160,17 @@ mutual -- TODO try remove in favour of forward declarions ?
   used n (NmRef _ _) = False
   used n (NmLam _ _ sc) = used n sc
   used n (NmLet _ _ v sc) = used n v || used n sc
-  used n (NmApp _ f args) = used n f || anyTrue (map (used n) args)
-  used n (NmCon _ _ _ _ args) = anyTrue (map (used n) args)
-  used n (NmOp _ _ args) = anyTrue (toList (map (used n) args))
-  used n (NmExtPrim _ _ args) = anyTrue (map (used n) args)
+  used n (NmApp _ f args) = used n f || any id (map (used n) args)
+  used n (NmCon _ _ _ _ args) = any id (map (used n) args)
+  used n (NmOp _ _ args) = any id (toList (map (used n) args))
+  used n (NmExtPrim _ _ args) = any id (map (used n) args)
   used n (NmForce _ _ t) = used n t
   used n (NmDelay _ _ t) = used n t
   used n (NmConCase _ sc alts def)
-        = used n sc || anyTrue (map (usedCon n) alts)
+        = used n sc || any id (map (usedCon n) alts)
               || maybe False (used n) def
   used n (NmConstCase _ sc alts def)
-        = used n sc || anyTrue (map (usedConst n) alts)
+        = used n sc || any id (map (usedConst n) alts)
               || maybe False (used n) def
   used n _ = False
 
@@ -1405,8 +1401,7 @@ build defs outputDir term file = do
   strbuf <- translate defs term
   let luaFile = file ++ ".lua"
   Right () <- coreLift $ writeBufferToFile (outputDir </> luaFile) strbuf.get strbuf.offset
-   | Left err => do coreLift $ freeBuffer strbuf.get; throw $ FileErr (outputDir </> luaFile) err
-  coreLift $ freeBuffer strbuf.get
+   | Left err => throw $ FileErr (outputDir </> luaFile) err
 
   luaExe <- coreLift getLuaExe
 
@@ -1434,7 +1429,7 @@ execute defs tmpDir term = do
   pure ()
 
 luaCodegen : Codegen
-luaCodegen = MkCG compile execute
+luaCodegen = MkCG compile execute Nothing Nothing
 
 export
 main : IO ()

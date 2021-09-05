@@ -8,7 +8,7 @@ import Data.Buffer
 import Data.List
 import Data.List
 import Data.List1
-import Data.String.Extra as StrExtra
+import Data.String.Extra
 import Data.String
 import Data.Vect
 import Data.Zippable
@@ -79,7 +79,7 @@ namespace Strings
 
   public export %inline
   indent : Nat -> String
-  indent n = StrExtra.replicate (2 * n) ' '
+  indent n = replicate (2 * n) ' '
 
   public export
   trimLeft : List Char -> List Char
