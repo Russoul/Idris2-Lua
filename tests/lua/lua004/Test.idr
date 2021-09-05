@@ -4,7 +4,7 @@ import Data.Vect
 import System.File
 import System
 import Data.Buffer
-import Data.Strings
+import Data.String
 
 test1 : Nat -> List String -> Vect n Int -> String
 test1 1 (x :: xs) (y :: ys) = show 1 ++ show x ++ show xs ++ show y ++ show ys

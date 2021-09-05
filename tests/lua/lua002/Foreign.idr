@@ -1,4 +1,4 @@
-import Data.Strings
+import Data.String
 
 main : IO ()
 main = do putStrLn $ fastPack ['a', 'b', 'c', 'π', 'Ω', '2']
