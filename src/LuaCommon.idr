@@ -2,6 +2,7 @@ module LuaCommon
 
 
 import Core.Core
+import Core.Context.Context
 import Core.Name
 import Data.Buffer
 import Data.Buffer
@@ -182,7 +183,7 @@ luaKeywords = ["and", "break", "do", "else", "elseif", "end",
 --you will get same output. But that is highly unlikely and would be a result of using bad naming conventions
 public export
 validateIdentifier : String -> String
-validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
+validateIdentifier str = fastConcat $ validate <$> unpack (validateKeyword str)
   where
     validate : Char -> String
     validate ':' = "_col_"

@@ -113,24 +113,20 @@ LuaBlock = (LuaExpr {-Block (may be empty)-}, LuaExpr {-Expr representing the re
 
 mkErrorAst : String -> LuaExpr
 mkErrorAst str =
-   LApp (LGVar (UN "error")) [LString str]
+   LApp (LGVar (UN (Basic "error"))) [LString str]
 
 mkCrashAst : LuaExpr -> LuaExpr
 mkCrashAst crash =
-    LApp (LLambda [] (    LApp (LGVar (UN "print"))
+    LApp (LLambda [] (    LApp (LGVar (UN (Basic "print")))
                                [LPrimFn StrAppend [LString "ERROR: ", crash]]
-                      <+> LApp (LGVar (UN "os.exit")) [LNumber "1"])) []
+                      <+> LApp (LGVar (UN (Basic "os.exit"))) [LNumber "1"])) []
 
 luaNull : LuaExpr
-luaNull = LGVar (UN "null")
-
-getArgsName : Name
-getArgsName = UN "idris__getArgs"
+luaNull = LGVar (UN (Basic "null"))
 
 stringifyNameGlobal : Name -> String
 stringifyNameGlobal (NS ns n) = (show ns) ++ "." ++ stringifyNameGlobal n
-stringifyNameGlobal (UN x) = x
-stringifyNameGlobal (RF str) = "." ++ str
+stringifyNameGlobal (UN x) = displayUserName x
 stringifyNameGlobal (MN x y) = "{" ++ x ++ ":" ++ show y ++ "}"
 stringifyNameGlobal (PV n d) = "{P:" ++ stringifyNameGlobal n ++ ":" ++ show d ++ "}"
 stringifyNameGlobal (DN _ n) = stringifyNameGlobal n
@@ -142,8 +138,7 @@ stringifyNameGlobal (Resolved x) = "$resolved" ++ show x
 
 stringifyNameMangle : Name -> String
 stringifyNameMangle (NS ns n) = (validateIdentifier $ show ns) ++ "_" ++ stringifyNameMangle n
-stringifyNameMangle (UN x) = validateIdentifier x
-stringifyNameMangle (RF x) = "rf__" ++ x
+stringifyNameMangle (UN x) = validateIdentifier (displayUserName x)
 stringifyNameMangle (MN x y) = "__" ++ (validateIdentifier x) ++ show y
 stringifyNameMangle (PV n d) = "pat__" ++ stringifyNameMangle n ++ "_" ++ show d
 stringifyNameMangle (DN _ n) = stringifyNameMangle n
@@ -228,7 +223,7 @@ mutual
   stringifyString str =
     let vstr = show str in --unpack is necessary as function stack size is very limited in lua
         fromMaybe ("utf8.char(idris.unpack({" ++ join ", " (show . ord <$> unpack str) ++ "})) --[[ " ++ trimQuotes vstr ++ "--]]")
-                  ((\str => fastAppend ["\"", str, "\""]) <$> escapeStringLua str) -- Try to escape simple ascii strings,
+                  ((\str => fastConcat ["\"", str, "\""]) <$> escapeStringLua str) -- Try to escape simple ascii strings,
                                                                         -- otherwise fall back to `unpack`
                   -- TODO lua 5.3 supports unicode escape sequences, use them
 
@@ -677,126 +672,146 @@ infoNS = mkNamespace "System.Info"
 fileNS : Namespace
 fileNS = mkNamespace "System.File"
 
+readWriteNS : Namespace
+readWriteNS = mkNamespace "System.File.Handle"
+
+handleNS : Namespace
+handleNS = mkNamespace "System.File.Handle"
+
+permissionsNS : Namespace
+permissionsNS = mkNamespace "System.File.Permissions"
+
+virtualNS : Namespace
+virtualNS = mkNamespace "System.File.Virtual"
+
+errorNS : Namespace
+errorNS = mkNamespace "System.File.Error"
+
+metaNS : Namespace
+metaNS = mkNamespace "System.File.Meta"
+
+processNS : Namespace
+processNS = mkNamespace "System.File.Process"
+
 termNS : Namespace
-termNS = mkNamespace "Utils.Term"
+termNS = mkNamespace "Libraries.Utils.Term"
 
 primioNS : Namespace
 primioNS = mkNamespace "PrimIO"
 
 extNames : List Name
 extNames = [
-             mkNamespacedName (Just iorefNS) "prim__newIORef"
-           , mkNamespacedName (Just iorefNS) "prim__readIORef"
-           , mkNamespacedName (Just iorefNS) "prim__writeIORef"
-           , mkNamespacedName (Just arrayNS) "prim__newArray"
-           , mkNamespacedName (Just arrayNS) "prim__arrayGet"
-           , mkNamespacedName (Just arrayNS) "prim__arraySet"
-           , mkNamespacedName (Just infoNS)  "prim__os"
-           , mkNamespacedName (Just infoNS)  "prim__codegen"
-           , mkNamespacedName (Just uninhabNS) "void"
-           , mkNamespacedName (Just ioNS) "onCollect"
-           , mkNamespacedName (Just ioNS) "onCollectAny"
+             mkNamespacedName (Just iorefNS)   (Basic "prim__newIORef")
+           , mkNamespacedName (Just iorefNS)   (Basic "prim__readIORef")
+           , mkNamespacedName (Just iorefNS)   (Basic "prim__writeIORef")
+           , mkNamespacedName (Just arrayNS)   (Basic "prim__newArray")
+           , mkNamespacedName (Just arrayNS)   (Basic "prim__arrayGet")
+           , mkNamespacedName (Just arrayNS)   (Basic "prim__arraySet")
+           , mkNamespacedName (Just infoNS)    (Basic "prim__os")
+           , mkNamespacedName (Just infoNS)    (Basic "prim__codegen")
+           , mkNamespacedName (Just uninhabNS) (Basic "void")
+           , mkNamespacedName (Just ioNS)      (Basic "onCollect")
+           , mkNamespacedName (Just ioNS)      (Basic "onCollectAny")
            ]
 
 foreignImpls : List Name
 foreignImpls = [
                  ------------- Not Implemented -----------
-                 mkNamespacedName (Just $ mkNamespace "Idris.IDEMode.REPL") "prim__fdopen"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_accept"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_bind"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_create_sockaddr"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_free"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_family"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_sockaddr_ipv4"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__idrnet_socket"
-               , mkNamespacedName (Just $ mkNamespace "Network.FFI") "prim__socket_listen"
+                 mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_accept")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_bind")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_create_sockaddr")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_free")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_sockaddr_family")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_sockaddr_ipv4")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__idrnet_socket")
+               , mkNamespacedName (Just $ mkNamespace "Network.FFI") (Basic "prim__socket_listen")
 
-               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet"
-               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_inet6"
-               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unix"
-               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_af_unspec"
-               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") "prim__idrnet_errno"
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") (Basic "prim__idrnet_af_inet")
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") (Basic "prim__idrnet_af_inet6")
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") (Basic "prim__idrnet_af_unix")
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") (Basic "prim__idrnet_af_unspec")
+               , mkNamespacedName (Just $ mkNamespace "Network.Socket.Data") (Basic "prim__idrnet_errno")
 
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcCpu"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeGcReal"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeMonotonic"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeProcess"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeThread"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__clockTimeUtc"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockNanosecond"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockSecond"
-               , mkNamespacedName (Just $ mkNamespace "System.Clock") "prim__osClockValid"
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeGcCpu")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeGcReal")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeMonotonic")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeProcess")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeThread")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__clockTimeUtc")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__osClockNanosecond")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__osClockSecond")
+               , mkNamespacedName (Just $ mkNamespace "System.Clock") (Basic "prim__osClockValid")
 
-               , mkNamespacedName (Just ioNS) "prim__fork"
-               , mkNamespacedName (Just systemNS) "prim__setEnv"
-               , mkNamespacedName (Just systemNS) "prim__getEnvPair"
-               , mkNamespacedName (Just systemNS) "prim__unsetEnv"
+               , mkNamespacedName (Just ioNS)     (Basic "prim__fork")
+               , mkNamespacedName (Just systemNS) (Basic "prim__setEnv")
+               , mkNamespacedName (Just systemNS) (Basic "prim__getEnvPair")
+               , mkNamespacedName (Just systemNS) (Basic "prim__unsetEnv")
                  -------------------------------------------
 
 
-               , mkNamespacedName (Just primioNS) "prim__nullAnyPtr"
-               , mkNamespacedName (Just ioNS) "prim__putStr"
-               , mkNamespacedName (Just ioNS) "prim__putChar"
-               , mkNamespacedName (Just ioNS) "prim__getStr"
-               , mkNamespacedName (Just ioNS) "prim__getChar"
-               , mkNamespacedName (Just ioNS) "prim__getString"
-               , mkNamespacedName (Just fileNS) "prim__flush"
-               , mkNamespacedName (Just fileNS) "prim__writeLine"
-               , mkNamespacedName (Just fileNS) "prim__readLine"
-               , mkNamespacedName (Just fileNS) "prim__readChar"
-               , mkNamespacedName (Just fileNS) "prim__readChars"
-               , mkNamespacedName (Just fileNS) "prim__eof"
-               , mkNamespacedName (Just fileNS) "prim__open"
-               , mkNamespacedName (Just fileNS) "prim__close"
-               , mkNamespacedName (Just fileNS) "prim__popen"
-               , mkNamespacedName (Just fileNS) "prim__pclose"
-               , mkNamespacedName (Just fileNS) "prim__error"
-               , mkNamespacedName (Just fileNS) "prim__fileErrno"
-               , mkNamespacedName (Just fileNS) "prim__removeFile"
-               , mkNamespacedName (Just fileNS) "prim__fileSize"
-               , mkNamespacedName (Just fileNS) "prim__fPoll"
-               , mkNamespacedName (Just fileNS) "prim__fileModifiedTime"
-               , mkNamespacedName (Just fileNS) "prim__fileStatusTime"
-               , mkNamespacedName (Just fileNS) "prim__stdin"
-               , mkNamespacedName (Just fileNS) "prim__stdout"
-               , mkNamespacedName (Just fileNS) "prim__stderr"
-               , mkNamespacedName (Just fileNS) "prim__chmod"
-               , mkNamespacedName (Just dirNS) "prim__changeDir"
-               , mkNamespacedName (Just dirNS) "prim__currentDir"
-               , mkNamespacedName (Just dirNS) "prim__createDir"
-               , mkNamespacedName (Just dirNS) "prim__removeDir"
-               , mkNamespacedName (Just dirNS) "prim__openDir"
-               , mkNamespacedName (Just dirNS) "prim__closeDir"
-               , mkNamespacedName (Just dirNS) "prim__dirEntry"
-               , mkNamespacedName (Just dirNS) "prim__fileErrno"
-               , mkNamespacedName (Just systemNS) "prim__getArgs"
-               , mkNamespacedName (Just systemNS) "prim__getEnv"
-               , mkNamespacedName (Just systemNS) "prim__exit"
-               , mkNamespacedName (Just systemNS) "prim__system"
-               , mkNamespacedName (Just stringsNS) "fastConcat"
-               , mkNamespacedName (Just stringsNS) "fastUnpack"
-               , mkNamespacedName (Just typesNS) "fastPack"
-               , mkNamespacedName (Just termNS) "prim__setupTerm"
-               , mkNamespacedName (Just termNS) "prim__getTermCols"
-               , mkNamespacedName (Just termNS) "prim__getTermLines"
-               , mkNamespacedName (Just bufferNS) "prim__newBuffer"
-               , mkNamespacedName (Just bufferNS) "prim__bufferSize"
-               , mkNamespacedName (Just bufferNS) "prim__setByte"
-               , mkNamespacedName (Just bufferNS) "prim__getByte"
-               , mkNamespacedName (Just bufferNS) "prim__setInt32"
-               , mkNamespacedName (Just bufferNS) "prim__getInt32"
-               , mkNamespacedName (Just bufferNS) "prim__setInt"
-               , mkNamespacedName (Just bufferNS) "prim__getInt"
-               , mkNamespacedName (Just bufferNS) "prim__setDouble"
-               , mkNamespacedName (Just bufferNS) "prim__getDouble"
-               , mkNamespacedName (Just bufferNS) "prim__setString"
-               , mkNamespacedName (Just bufferNS) "prim__getstring"
-               , mkNamespacedName (Just bufferNS) "prim__copyData"
-               , mkNamespacedName (Just bufferNS) "prim__readBufferData"
-               , mkNamespacedName (Just bufferNS) "prim__writeBufferData"
-               , mkNamespacedName (Just bufferNS) "stringByteLength"
-               , mkNamespacedName (Just strIterNS) "prim__fromString"
-               , mkNamespacedName (Just strIterNS) "prim__uncons"
+               , mkNamespacedName (Just primioNS) (Basic "prim__nullAnyPtr")
+               , mkNamespacedName (Just ioNS) (Basic "prim__putStr")
+               , mkNamespacedName (Just ioNS) (Basic "prim__putChar")
+               , mkNamespacedName (Just ioNS) (Basic "prim__getStr")
+               , mkNamespacedName (Just ioNS) (Basic "prim__getChar")
+               , mkNamespacedName (Just ioNS) (Basic "prim__getString")
+               , mkNamespacedName (Just processNS) (Basic "prim__flush")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__writeLine")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__readLine")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__readChar")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__readChars")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__eof")
+               , mkNamespacedName (Just handleNS) (Basic "prim__open")
+               , mkNamespacedName (Just handleNS) (Basic "prim__close")
+               , mkNamespacedName (Just processNS) (Basic "prim__popen")
+               , mkNamespacedName (Just processNS) (Basic "prim__pclose")
+               , mkNamespacedName (Just errorNS) (Basic "prim__error")
+               , mkNamespacedName (Just errorNS) (Basic "prim__fileErrno")
+               , mkNamespacedName (Just readWriteNS) (Basic "prim__removeFile")
+               , mkNamespacedName (Just metaNS) (Basic "prim__fileSize")
+               , mkNamespacedName (Just metaNS) (Basic "prim__fPoll")
+               , mkNamespacedName (Just metaNS) (Basic "prim__fileModifiedTime")
+               , mkNamespacedName (Just metaNS) (Basic "prim__fileStatusTime")
+               , mkNamespacedName (Just virtualNS) (Basic "prim__stdin")
+               , mkNamespacedName (Just virtualNS) (Basic "prim__stdout")
+               , mkNamespacedName (Just virtualNS) (Basic "prim__stderr")
+               , mkNamespacedName (Just permissionsNS) (Basic "prim__chmod")
+               , mkNamespacedName (Just dirNS) (Basic "prim__changeDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__currentDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__createDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__removeDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__openDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__closeDir")
+               , mkNamespacedName (Just dirNS) (Basic "prim__dirEntry")
+               , mkNamespacedName (Just systemNS) (Basic "prim__getArgCount")
+               , mkNamespacedName (Just systemNS) (Basic "prim__getArg")
+               , mkNamespacedName (Just systemNS) (Basic "prim__getEnv")
+               , mkNamespacedName (Just systemNS) (Basic "prim__exit")
+               , mkNamespacedName (Just systemNS) (Basic "prim__system")
+               , mkNamespacedName (Just typesNS) (Basic "fastConcat")
+               , mkNamespacedName (Just typesNS) (Basic "fastUnpack")
+               , mkNamespacedName (Just typesNS) (Basic "fastPack")
+               , mkNamespacedName (Just termNS) (Basic "prim__setupTerm")
+               , mkNamespacedName (Just termNS) (Basic "prim__getTermCols")
+               , mkNamespacedName (Just termNS) (Basic "prim__getTermLines")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__newBuffer")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__bufferSize")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__setByte")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__getByte")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__setInt32")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__getInt32")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__setInt")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__getInt")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__setDouble")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__getDouble")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__setString")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__getstring")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__copyData")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__readBufferData")
+               , mkNamespacedName (Just bufferNS) (Basic "prim__writeBufferData")
+               , mkNamespacedName (Just bufferNS) (Basic "stringByteLength")
+               , mkNamespacedName (Just strIterNS) (Basic "fromString")
+               , mkNamespacedName (Just strIterNS) (Basic "uncons")
                ]
 
 mutual -- TODO try remove in favour of forward declarions ?
@@ -827,14 +842,14 @@ mutual -- TODO try remove in favour of forward declarions ?
             ( pure $ ns == iorefNS
             ,
               case (n, args) of
-                   ("prim__newIORef", [_, v, _]) =>
+                   (Basic "prim__newIORef", [_, v, _]) =>
                       do (blockA, v) <- processExpr v
                          pure (blockA, LTable [(LString "val", v)])
-                   ("prim__readIORef", [_, r, _]) =>
+                   (Basic "prim__readIORef", [_, r, _]) =>
                       do
                         (blockA, r) <- processExpr r
                         pure (blockA, LIndex r (LString "val"))
-                   ("prim__writeIORef", [_, r, v, _]) =>
+                   (Basic "prim__writeIORef", [_, r, v, _]) =>
                       do
                         (blockA, r) <- processExpr r
                         (blockB, v) <- processExpr v
@@ -843,7 +858,7 @@ mutual -- TODO try remove in favour of forward declarions ?
             ,
             ( pure $ ns == arrayNS
             , case (n, args) of
-                   ("prim__newArray", [_, len, init, _]) =>
+                   (Basic "prim__newArray", [_, len, init, _]) =>
                       do
                         (blockA, len) <- processExpr len
                         (blockB, init) <- processExpr init
@@ -855,12 +870,12 @@ mutual -- TODO try remove in favour of forward declarions ?
                                  <+> (LAssign Nothing counter (LPrimFn (Add IntType) [counter, LNumber "1"]))
                         pure (blockA <+> blockB <+> LAssign Nothing table (LTable [])
                               <+> LAssign Nothing counter (LNumber "1") <+> loop, table)
-                   ("prim__arrayGet", [_, ar, i, _]) =>
+                   (Basic "prim__arrayGet", [_, ar, i, _]) =>
                       do
                         (blockA, ar) <- processExpr ar
                         (blockB, i) <- processExpr i
                         pure (blockA <+> blockB, LIndex ar (LPrimFn (Add IntType) [i, LNumber "1"]))
-                   ("prim__arraySet", [_, ar, i, v, _]) =>
+                   (Basic "prim__arraySet", [_, ar, i, v, _]) =>
                       do
                         (blockA, ar) <- processExpr ar
                         (blockB, i) <- processExpr i
@@ -876,7 +891,7 @@ mutual -- TODO try remove in favour of forward declarions ?
              ,
              ( pure $ ns == infoNS
              , case n of
-                    "prim__os" =>
+                    Basic "prim__os" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
@@ -885,7 +900,7 @@ mutual -- TODO try remove in favour of forward declarions ?
              ,
              ( pure $ ns == infoNS
              , case n of
-                    "prim__codegen" =>
+                    Basic "prim__codegen" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
@@ -894,7 +909,7 @@ mutual -- TODO try remove in favour of forward declarions ?
              ,
              ( pure $ ns == uninhabNS
              , case n of
-                    "void" =>
+                    Basic "void" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
@@ -903,12 +918,12 @@ mutual -- TODO try remove in favour of forward declarions ?
              ,
              ( pure $ ns == ioNS
              , case n of
-                    "prim__onCollectAny" =>
+                    Basic "prim__onCollectAny" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
                          pure (concat blockA, curriedApp (LGVar name) args) --defined in support file
-                    "prim__onCollect" =>
+                    Basic "prim__onCollect" =>
                        do
                          args' <- traverse processExpr args
                          let (blockA, args) = unzip args'
@@ -996,17 +1011,14 @@ mutual -- TODO try remove in favour of forward declarions ?
               def <- preprocess name def
               logLine $ "using %foreign " ++ def
               case maybeReq of
-                   (Just packs) => do logLine $ "requiring " ++ (show $ map fst packs)
-                                      traverse_
-                                        (\pack =>
-                                          addDefToPreamble
-                                           ("$" ++ snd pack)
-                                            ((stringifyName Global (UN $ snd pack)) ++ " = require('" ++ fst pack ++ "')")
-                                             True) -- its ok to require the same package multiple times, ignore all but first
-                                        packs
+                   (Just packs) => do
+                     logLine $ "requiring " ++ (show $ map fst packs)
+                     for_ packs $ \pack =>
+                       addDefToPreamble ("$" ++ snd pack)
+                         ((stringifyName Global (UN $ Basic $ snd pack)) ++ " = require('" ++ fst pack ++ "')")
+                          True -- its ok to require the same package multiple times, ignore all but first
                                                                               -- '$' makes sure all require statements
                                                                               -- appear above assignments that use them
-                                      pure ()
                    Nothing => pure ()
               if replace then do
                     let strname = stringifyName Global name

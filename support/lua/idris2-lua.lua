@@ -1017,10 +1017,10 @@ idris["System.Info.prim__os"] = idris.getOS()
 
 idris["System.Info.prim__codegen"] = "lua"
 
-idris["Utils.Term.prim__setupTerm"] = function(w)
+idris["Libraries.Utils.Term.prim__setupTerm"] = function(w)
   return {tag="0"} -- Unit
 end
 
 --TODO add native library code to deal with this
-idris["Utils.Term.prim__getTermCols"] = function () return 0 end
-idris["Utils.Term.prim__getTermLines"] = function () return 0 end
+idris["Libraries.Utils.Term.prim__getTermCols"] = function () return 0 end
+idris["Libraries.Utils.Term.prim__getTermLines"] = function () return 0 end
