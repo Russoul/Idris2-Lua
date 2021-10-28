@@ -1,11 +1,11 @@
 # Lua backend for Idris 2
 [![](https://github.com/Russoul/Idris2-Lua/workflows/Ubuntu/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"Ubuntu")
 [![](https://github.com/Russoul/Idris2-Lua/workflows/macOS/badge.svg)](https://github.com/Russoul/Idris2-Lua/actions?query=workflow%3A"macOS")
-<BR>Tested against [Idris 2, version 0.3.0-349308396](https://github.com/idris-lang/Idris2/tree/349308396c1ad2579eb75084c2ab51ec2ee5e110)
+<BR>Tested against [Idris 2, version 0.5.1-96c44abb6](https://github.com/idris-lang/Idris2/tree/96c44abb64ce1ccf5daa6b2eb5ad3d2e86d80001)
 
 ## Requirements & Installation
 - Install `Idris 2` and `Idris 2 API`, see https://github.com/idris-lang/Idris2/blob/master/INSTALL.md for instructions
-- Target Lua versions: 5.1, 5.2, 5.3, 5.4 (not tested, but planned), LuaJIT
+- Target Lua versions: 5.1, 5.2, 5.3, recent LuaJIT
 - Depends on [lua-utf8](https://github.com/starwing/luautf8.git), [lua-bigint](https://github.com/JorjBauer/lua-bigint.git),
   [lfs](https://keplerproject.github.io/luafilesystem/manual.html), [vstruct](https://github.com/ToxicFrog/vstruct) and
   [inspect](https://github.com/kikito/inspect.lua) (tests only)
@@ -27,7 +27,7 @@
   luarocks install bit32 --lua-version=5.1 --local
   ```
 
-where `V` is your lua version (5.1, 5.2, 5.3, 5.4).
+where `V` is your lua version (5.1, 5.2, 5.3).
 
 ---
 

@@ -1,7 +1,7 @@
 import System
 import System.File
 import System.Info
-import Data.Strings
+import Data.String
 import Data.List1
 
 windowsPath : String -> String
@@ -26,5 +26,4 @@ main = do
     pclose fh
     putStrLn "closed"
     let idris2 ::: _ = split ((==) ',') output
-        | _ => printLn "Unexpected result"
     putStrLn idris2

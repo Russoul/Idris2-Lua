@@ -1,9 +1,8 @@
-module Test
 
 import Data.Vect
 import Data.IORef
 import Data.IOArray
-import Data.Strings
+import Data.String
 import Data.Vect
 import Data.List
 import System
@@ -114,7 +113,7 @@ main = do
   putStrLn $ show $ (the Integer 0) > 0
   putStrLn $ show $ testInteger 2 5
   putStrLn $ "2 ^ 6 == " ++ show (intPow 2 6)
-  let  tr = fillIn 4 [] (\d, i => (cast d) ++ " " ++ (cast i))
+  let  tr = fillIn 4 [] (\d, i => show d ++ " " ++ show i)
   putStrLn $ printLeft tr
 
   putStrLn $ "the guts of BTree look like this: " ++ inspect tr

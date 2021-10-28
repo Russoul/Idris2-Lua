@@ -420,7 +420,7 @@ idris["System.prim__system"] = function(cmd)
   end
 end
 
-idris["System.File.prim__popen"] = function(cmd)
+idris["System.File.Process.prim__popen"] = function(cmd)
   return function(mode)
     return function(_)
       local res = assert(io.popen(cmd, mode))
@@ -433,7 +433,7 @@ idris["System.File.prim__popen"] = function(cmd)
   end
 end
 
-idris["System.File.prim__pclose"] = function(ptr)
+idris["System.File.Process.prim__pclose"] = function(ptr)
   return function(_)
     return ptr.deref.handle:close()
   end
@@ -466,7 +466,10 @@ idris["System.Directory.prim__createDir"] = function(d)
     if ok then
        return 0
     else
-       if errmsg == "File exists" then idris.last_file_err = 4 end
+       if errmsg == "File exists" then
+         idris.last_file_err = 4
+         idris.last_file_error_code = 4
+       end
        return 1
     end
   end
@@ -514,7 +517,7 @@ idris["System.Directory.prim__dirEntry"] = function(ptr)
   end
 end
 
-idris["System.Directory.prim__fileErrno"] = function(w)
+idris["System.Errno.prim__getErrno"] = function(w)
    return idris.last_file_err
 end
 
@@ -533,7 +536,7 @@ idris.updateFileError = function(errstr, code)
    end
 end
 
-idris["System.File.prim__open"] = function(name)
+idris["System.File.Handle.prim__open"] = function(name)
   return function(mode)
     return function(w)
       local f, str, code = io.open(name, mode)
@@ -547,20 +550,20 @@ idris["System.File.prim__open"] = function(name)
   end
 end
 
-idris["System.File.prim__close"] = function(file)
+idris["System.File.Handle.prim__close"] = function(file)
   return function(w)
     file.deref.handle:close()
     return {tag="0"} -- Unit
   end
 end
 
-idris["System.File.prim__error"] = function(file)
+idris["System.File.Error.prim__error"] = function(file)
   return function(w)
     if file ~= null then return 0 else return 1 end
   end
 end
 
-idris["System.File.prim__fileErrno"] = function (w)
+idris["System.File.Error.prim__fileErrno"] = function (w)
    return idris.last_file_error_code
 end
 
@@ -580,11 +583,11 @@ function idris.readFile(file, ty)
    end
 end
 
-idris["System.File.prim__readLine"] = function(file)
+idris["System.File.ReadWrite.prim__readLine"] = function(file)
   return function(w)
     local ptr = idris.readFile(file, idris.readl)
     if ptr ~= null then
-       if idris["System.File.prim__eof"](file)(w) == 0 then -- no EOF
+       if idris["System.File.ReadWrite.prim__eof"](file)(w) == 0 then -- no EOF
           return idris.mkPtr(ptr.deref .. "\n")
        else return idris.mkPtr(ptr.deref) --[[ no EOL in case we hit EOF --]] end
     else
@@ -593,7 +596,7 @@ idris["System.File.prim__readLine"] = function(file)
   end
 end
 
-idris["System.File.prim__readChars"] = function(n)
+idris["System.File.ReadWrite.prim__readChars"] = function(n)
   return function(file)
     return function(w)
       return idris.readFile(file, n)
@@ -601,7 +604,7 @@ idris["System.File.prim__readChars"] = function(n)
   end
 end
 
-idris["System.File.prim__readChar"] = function(file)
+idris["System.File.ReadWrite.prim__readChar"] = function(file)
   return function(w)
     local res = idris.readFile(file, 1)
     if res ~= null and res.deref ~= "" then
@@ -612,7 +615,7 @@ idris["System.File.prim__readChar"] = function(file)
   end
 end
 
-idris["System.File.prim__writeLine"] = function(file)
+idris["System.File.ReadWrite.prim__writeLine"] = function(file)
   return function(line)
     return function(w)
       local ok, err, code = file.deref.handle:write(line)
@@ -622,13 +625,13 @@ idris["System.File.prim__writeLine"] = function(file)
   end
 end
 
-idris["System.File.prim__eof"] = function(file)
+idris["System.File.ReadWrite.prim__eof"] = function(file)
   return function(w)
     if idrisn.feof(file.deref.handle) == 0 then return 0 --[[ no EOF --]] else return 1 --[[ EOF --]] end
   end
 end
 
-idris["System.File.prim__flush"] = function(file)
+idris["System.File.Process.prim__flush"] = function(file)
   return function(w)
     local ok, err, code = file.deref.handle:flush() --TODO no documentation for file:flush(), does it return error str and code ?
     idris.updateFileError(err, code)
@@ -636,7 +639,7 @@ idris["System.File.prim__flush"] = function(file)
   end
 end
 
-idris["System.File.prim__removeFile"] = function(name)
+idris["System.File.ReadWrite.prim__removeFile"] = function(name)
   return function(w)
     local ok, err, code = os.remove(name)
     idris.updateFileError(err, code)
@@ -644,7 +647,7 @@ idris["System.File.prim__removeFile"] = function(name)
   end
 end
 
-idris["System.File.prim__fileSize"] = function(file)
+idris["System.File.Meta.prim__fileSize"] = function(file)
   return function(w)
     local pos = file.deref.handle:seek()
     local bytes, err = file.deref.handle:seek("end")
@@ -658,13 +661,13 @@ idris["System.File.prim__fileSize"] = function(file)
   end
 end
 
-idris["System.File.prim__fPoll"] = function(file)
+idris["System.File.Meta.prim__fPoll"] = function(file)
   return function(w)
-    return idris["System.File.prim__fileSize"](file)(w)
+    return idris["System.File.Meta.prim__fileSize"](file)(w)
   end
 end
 
-idris["System.File.prim__fileModifiedTime"] = function(file)
+idris["System.File.Meta.prim__fileModifiedTime"] = function(file)
   return function(w)
     local ok, err, code = lfs.attributes(file.deref.path, "modification")
     idris.updateFileError(err, code)
@@ -676,7 +679,7 @@ idris["System.File.prim__fileModifiedTime"] = function(file)
   end
 end
 
-idris["System.File.prim__fileStatusTime"] = function(file)
+idris["System.File.Meta.prim__fileStatusTime"] = function(file)
   return function(w)
     local ok, err, code = lfs.attributes(file.deref.path, "change")
     idris.updateFileError(err, code)
@@ -688,13 +691,13 @@ idris["System.File.prim__fileStatusTime"] = function(file)
   end
 end
 
-idris["System.File.prim__stdin"] = idris.mkPtr({handle=io.stdin, path="$stdin"})
+idris["System.File.Virtual.prim__stdin"] = idris.mkPtr({handle=io.stdin, path="$stdin"})
 
-idris["System.File.prim__stdout"] = idris.mkPtr({handle=io.stdout, path="$stdout"})
+idris["System.File.Virtual.prim__stdout"] = idris.mkPtr({handle=io.stdout, path="$stdout"})
 
-idris["System.File.prim__stderr"] = idris.mkPtr({handle=io.stderr, path="$stderr"})
+idris["System.File.Virtual.prim__stderr"] = idris.mkPtr({handle=io.stderr, path="$stderr"})
 
-idris["System.File.prim__chmod"] = function(path)
+idris["System.File.Permissions.prim__chmod"] = function(path)
   return function(mod)
     return function(w)
       local exit, code = os.execute("chmod " .. string.format("%o", mod) .. " " .. path)
@@ -890,7 +893,7 @@ idris["Data.Buffer.prim__copyData"] = function(bufA)
 end
 
 --offset is 'buf' offset
-idris["Data.Buffer.prim__readBufferData"] = function(file)
+idris["System.File.Buffer.prim__readBufferData"] = function(file)
   return function(buf)
     return function(offset)
       return function(max)
@@ -907,7 +910,7 @@ idris["Data.Buffer.prim__readBufferData"] = function(file)
   end
 end
 
-idris["Data.Buffer.prim__writeBufferData"] = function(file)
+idris["System.File.Buffer.prim__writeBufferData"] = function(file)
   return function(buf)
     return function(offset)
       return function(len)
@@ -1014,10 +1017,10 @@ idris["System.Info.prim__os"] = idris.getOS()
 
 idris["System.Info.prim__codegen"] = "lua"
 
-idris["Utils.Term.prim__setupTerm"] = function(w)
+idris["Libraries.Utils.Term.prim__setupTerm"] = function(w)
   return {tag="0"} -- Unit
 end
 
 --TODO add native library code to deal with this
-idris["Utils.Term.prim__getTermCols"] = function () return 0 end
-idris["Utils.Term.prim__getTermLines"] = function () return 0 end
+idris["Libraries.Utils.Term.prim__getTermCols"] = function () return 0 end
+idris["Libraries.Utils.Term.prim__getTermLines"] = function () return 0 end

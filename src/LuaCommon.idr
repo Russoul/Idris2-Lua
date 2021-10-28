@@ -2,13 +2,14 @@ module LuaCommon
 
 
 import Core.Core
+import Core.Context.Context
 import Core.Name
 import Data.Buffer
 import Data.Buffer
 import Data.List
 import Data.List
 import Data.List1
-import Data.String.Extra as StrExtra
+import Data.String.Extra
 import Data.String
 import Data.Vect
 import Data.Zippable
@@ -79,7 +80,7 @@ namespace Strings
 
   public export %inline
   indent : Nat -> String
-  indent n = StrExtra.replicate (2 * n) ' '
+  indent n = replicate (2 * n) ' '
 
   public export
   trimLeft : List Char -> List Char
@@ -182,7 +183,7 @@ luaKeywords = ["and", "break", "do", "else", "elseif", "end",
 --you will get same output. But that is highly unlikely and would be a result of using bad naming conventions
 public export
 validateIdentifier : String -> String
-validateIdentifier str = fastAppend $ validate <$> unpack (validateKeyword str)
+validateIdentifier str = fastConcat $ validate <$> unpack (validateKeyword str)
   where
     validate : Char -> String
     validate ':' = "_col_"
