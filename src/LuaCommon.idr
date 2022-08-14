@@ -14,8 +14,6 @@ import Data.String
 import Data.Vect
 import Data.Zippable
 
-import Libraries.Utils.Hex
-
 infixl 100 |>
 
 ||| Flipped tightly bound function application
