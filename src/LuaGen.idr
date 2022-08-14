@@ -6,7 +6,6 @@ import Compiler.CompileExpr
 import Core.Context
 import Core.Directory
 
-import Libraries.Utils.Hex
 import Libraries.Utils.Path
 
 import Idris.Driver
@@ -511,9 +510,9 @@ pushFrame =
     s <- get Stack
     let frame = nextFrame s
     let index = nextIndex s
-    put Stack (record{ nextFrame $= (+1)
-                     , nextIndex = indexLowest
-                     , stack $= (index ::) } s)
+    put Stack ({ nextFrame $= (+1)
+               , nextIndex := indexLowest
+               , stack     $= (index ::) } s)
     pure (MkStackFrame frame)
 
 pushLocal :
@@ -524,7 +523,7 @@ pushLocal =
   do
     s <- get Stack
     let i = nextIndex s
-    put Stack (record{nextIndex $= (+1)} s)
+    put Stack ({nextIndex $= (+1)} s)
     pure (LIndex (LLVar (frameName frame)) (LNumber (show i)))
 
 ||| Returns the number of local variables in the popped frame
@@ -536,7 +535,7 @@ popFrame =
      let v = nextIndex s
      case (i <= frameLowest, stack s) of
           (False, (nextIndex :: other)) => do
-             put Stack (record{nextFrame $= (\i => i - 1), nextIndex = nextIndex, stack = other} s)
+             put Stack ({nextFrame $= (\i => i - 1), nextIndex := nextIndex, stack := other} s)
              pure (v - 1)
           (_, _) => throw (UserError "Attempt to pop from an empty stack")
 
@@ -549,7 +548,7 @@ popName =
      if i <= indexLowest then
            throw (UserError "attempt to pop from an empty stack frame")
         else
-           put Stack (record{nextIndex $= (\i => i - 1)} s)
+           put Stack ({nextIndex $= (\i => i - 1)} s)
 
 
 getPreamble :
@@ -581,19 +580,17 @@ addDefToPreamble name def okIfDefined = do
              else
                pure ()
 
-
 constantTy : Constant -> Maybe Constant
-constantTy (I _)   = Just IntType
-constantTy (BI _)  = Just IntegerType
-constantTy (B8 _)  = Just Bits8Type
-constantTy (B16 _) = Just Bits16Type
-constantTy (B32 _) = Just Bits32Type
-constantTy (B64 _) = Just Bits64Type
-constantTy (Str _) = Just StringType
-constantTy (Ch _)  = Just CharType
-constantTy (Db _)  = Just DoubleType
+constantTy (I _)   = Just (PrT IntType)
+constantTy (BI _)  = Just (PrT IntegerType)
+constantTy (B8 _)  = Just (PrT Bits8Type)
+constantTy (B16 _) = Just (PrT Bits16Type)
+constantTy (B32 _) = Just (PrT Bits32Type)
+constantTy (B64 _) = Just (PrT Bits64Type)
+constantTy (Str _) = Just (PrT StringType)
+constantTy (Ch _)  = Just (PrT CharType)
+constantTy (Db _)  = Just (PrT DoubleType)
 constantTy _       = Nothing
-
 
 processConstant : Constant -> Core LuaExpr
 processConstant (I x) = pure $ LNumber (show x)
@@ -627,7 +624,6 @@ mkCaseImpl retn [] (Just (blockA, els)) =
   pure $ blockA <+> LAssign Nothing retn els
 mkCaseImpl retn [] Nothing =
   pure $ mkErrorAst "Impossible else branch"
-
 
 mkCase :
        {auto stack : Ref Stack StackSt}
@@ -934,10 +930,6 @@ mutual -- TODO try remove in favour of forward declarions ?
   --   notDefined          = throw $ InternalError $ "external primitive not implemented: " ++ show name
   processExtCall name args = processCustomExtCall name args
 
-
-
-
-
   readCCPart : String -> (String, String)
   readCCPart x =
     let (cc, def) = break (== ':') x
@@ -1045,7 +1037,7 @@ mutual -- TODO try remove in favour of forward declarions ?
   constCaseIndex : NamedConstAlt -> LuaExpr -> Core LuaExpr
   constCaseIndex (MkNConstAlt const _) index =
      case constantTy const of
-          (Just IntegerType) => pure $ LPrimFn (Cast IntegerType StringType) [index]
+          (Just (PrT IntegerType)) => pure $ LPrimFn (Cast IntegerType StringType) [index]
           (Just other) => pure index
           Nothing => throw $ UserError ("Cannot match on " ++ show const)
 
@@ -1210,7 +1202,6 @@ mutual -- TODO try remove in favour of forward declarions ?
                                                           <+> blockA {-blockA uses those bindings-}
                                                           <+> LReturn res)
 
-
   processConstAlt :
         {auto stack : Ref Stack StackSt}
      -> {auto frame : StackFrame}
@@ -1231,10 +1222,8 @@ mutual -- TODO try remove in favour of forward declarions ?
                               <+> blockA
                               <+> LReturn res)
 
-
   indexConstructorArg : Nat -> LuaExpr
   indexConstructorArg i = LString $ "arg" ++ (show i)
-
 
   processTag : Name -> Maybe Int -> String
   processTag n Nothing = stringifyName Global n
@@ -1413,7 +1402,7 @@ build defs outputDir term file = do
   strbuf <- translate defs term
   let luaFile = file ++ ".lua"
   Right () <- coreLift $ writeBufferToFile (outputDir </> luaFile) strbuf.get strbuf.offset
-   | Left err => throw $ FileErr (outputDir </> luaFile) err
+   | Left err => throw $ FileErr (outputDir </> luaFile) (fst err)
 
   luaExe <- coreLift getLuaExe
 
